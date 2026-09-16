@@ -2,7 +2,7 @@ const CARDS = Array.isArray(window.SV_CARDS) ? window.SV_CARDS : [];
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
 let cardIndex = 0;
-let editorState = { message: "", signature: "", reuseConsent: false };
+let editorState = { message: "", signature: "" };
 let compositionStartedAt = null;
 
 const escapeHtml = (value="") => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -34,37 +34,105 @@ function renderChooser(){
     ${shell("Choisis une carte")}
     <section class="stage">
       <div class="carousel-shell">
-        <div class="carousel" id="carousel">
+        <div class="carousel" id="carousel" aria-label="Illustrations à choisir">
           ${CARDS.map((c,i)=>`<button class="card-thumb ${i===cardIndex?'active':''}" data-index="${i}" aria-label="Choisir ${escapeHtml(c.label)}"><img src="${c.src}" alt=""></button>`).join("")}
         </div>
-        <div class="nav">
-          <button class="arrow" id="prev" aria-label="Carte précédente">‹</button>
-          <div class="dots">${CARDS.map((_,i)=>`<span class="dot ${i===cardIndex?'active':''}"></span>`).join("")}</div>
-          <button class="arrow" id="next" aria-label="Carte suivante">›</button>
-        </div>
-        <div class="hint">Clique sur la carte pour écrire ton billet</div>
+        <div class="hint">Fais glisser · touche la carte pour écrire</div>
       </div>
     </section>
     <div class="footer"></div>`;
 
   const carousel = document.querySelector("#carousel");
-  function position(){
-    const card = carousel.children[0];
-    if(!card) return;
-    const w = card.getBoundingClientRect().width;
-    const gap = parseFloat(getComputedStyle(carousel).gap)||0;
-    carousel.style.transform = `translateX(${-cardIndex*(w+gap)}px)`;
+  const cards = [...document.querySelectorAll(".card-thumb")];
+  let scrollTimer = null;
+  let pointerDown = false;
+  let dragged = false;
+  let startX = 0;
+  let startScroll = 0;
+
+  function centerCard(index, behavior="smooth"){
+    const el = cards[index];
+    if(!el) return;
+    // scrollIntoView + scroll-snap donne un centrage fiable sur iOS/Safari/desktop.
+    el.scrollIntoView({ behavior, block:"nearest", inline:"center" });
   }
-  function change(dir){ cardIndex = (cardIndex+dir+CARDS.length)%CARDS.length; renderChooser(); }
-  document.querySelector("#prev").onclick=()=>change(-1);
-  document.querySelector("#next").onclick=()=>change(1);
-  document.querySelectorAll(".card-thumb").forEach(btn=>btn.onclick=()=>{
-    const i=Number(btn.dataset.index);
-    if(i!==cardIndex){ cardIndex=i; renderChooser(); }
+
+  function nearestIndex(){
+    const center = carousel.scrollLeft + carousel.clientWidth/2;
+    let best = 0, dist = Infinity;
+    cards.forEach((el,i)=>{
+      const cardCenter = el.offsetLeft + el.clientWidth/2;
+      const d = Math.abs(cardCenter-center);
+      if(d<dist){dist=d;best=i;}
+    });
+    return best;
+  }
+
+  function setActive(index){
+    cardIndex = index;
+    cards.forEach((el,i)=>el.classList.toggle("active",i===index));
+  }
+
+  carousel.addEventListener("scroll",()=>{
+    setActive(nearestIndex());
+    clearTimeout(scrollTimer);
+    // On laisse le snap natif finir le geste : aucune correction agressive pendant le swipe.
+    scrollTimer = setTimeout(()=>setActive(nearestIndex()),140);
+  },{passive:true});
+  if("onscrollend" in window){
+    carousel.addEventListener("scrollend",()=>setActive(nearestIndex()),{passive:true});
+  }
+
+  // Sur tactile, mémorise le déplacement pour qu’un swipe ne déclenche pas l’ouverture.
+  let touchStartX = 0;
+  carousel.addEventListener("touchstart",e=>{
+    touchStartX = e.touches[0]?.clientX || 0;
+    dragged = false;
+  },{passive:true});
+  carousel.addEventListener("touchmove",e=>{
+    const x = e.touches[0]?.clientX || touchStartX;
+    if(Math.abs(x-touchStartX) > 8) dragged = true;
+  },{passive:true});
+
+  cards.forEach(btn=>btn.addEventListener("click",()=>{
+    const i = Number(btn.dataset.index);
+    if(dragged){ dragged=false; return; }
+    if(i !== cardIndex){ setActive(i); centerCard(i); }
     else renderEditor();
+  }));
+
+  // Souris/trackpad sur ordinateur : on peut attraper la rangée comme une bande de cartes.
+  carousel.addEventListener("pointerdown",e=>{
+    if(e.pointerType === "touch") return;
+    pointerDown=true; dragged=false; startX=e.clientX; startScroll=carousel.scrollLeft;
+    carousel.classList.add("dragging");
+    carousel.setPointerCapture?.(e.pointerId);
   });
-  requestAnimationFrame(position);
-  window.onresize=position;
+  carousel.addEventListener("pointermove",e=>{
+    if(!pointerDown) return;
+    const dx=e.clientX-startX;
+    if(Math.abs(dx)>5) dragged=true;
+    carousel.scrollLeft=startScroll-dx;
+  });
+  function stopDrag(e){
+    if(!pointerDown) return;
+    pointerDown=false; carousel.classList.remove("dragging");
+    try{ carousel.releasePointerCapture?.(e.pointerId); }catch(_){ }
+    setActive(nearestIndex()); centerCard(cardIndex);
+  }
+  carousel.addEventListener("pointerup",stopDrag);
+  carousel.addEventListener("pointercancel",stopDrag);
+
+  // Une roulette verticale sur la galerie devient un défilement horizontal discret.
+  carousel.addEventListener("wheel",e=>{
+    if(Math.abs(e.deltaY) > Math.abs(e.deltaX)){
+      e.preventDefault();
+      carousel.scrollLeft += e.deltaY;
+    }
+  },{passive:false});
+
+  requestAnimationFrame(()=>requestAnimationFrame(()=>centerCard(cardIndex,"auto")));
+  window.onresize=()=>centerCard(cardIndex,"auto");
 }
 
 function renderEditor(){
@@ -83,17 +151,15 @@ function renderEditor(){
           </div>
         </div>
       </div>
-      <div class="consent"><label><input type="checkbox" id="reuseConsent" ${editorState.reuseConsent?'checked':''}> J’accepte que mon message, sans ma signature, puisse nourrir de futurs projets artistiques.</label></div>
     </section>
     <div class="footer"><button class="gold-button" id="send">Envoyer</button></div>`;
 
   const flipCard=document.querySelector("#flipCard");
   const msg=document.querySelector("#message");
   const sig=document.querySelector("#signature");
-  const consent=document.querySelector("#reuseConsent");
   const count=document.querySelector("#lineCount");
   requestAnimationFrame(()=>requestAnimationFrame(()=>flipCard.classList.add("is-flipped")));
-  setTimeout(()=>msg.focus(),900);
+  setTimeout(()=>msg.focus({preventScroll:true}),760);
 
   function beginComposition(){ if(!compositionStartedAt) compositionStartedAt=Date.now(); }
   function visualLines(el){
@@ -104,18 +170,21 @@ function renderEditor(){
     const lines=Math.max(1,Math.round(mirror.scrollHeight/parseFloat(cs.lineHeight))); mirror.remove(); return lines;
   }
   let previous=msg.value;
-  function updateCount(){ count.textContent=`${visualLines(msg)} / 4 lignes`; }
+  function updateCount(){
+    const n=visualLines(msg);
+    count.textContent=n>=4 ? "4 lignes maximum" : "";
+    count.classList.toggle("visible",n>=4);
+  }
   msg.addEventListener("beforeinput",()=>{ previous=msg.value; beginComposition(); });
   msg.addEventListener("input",()=>{ if(visualLines(msg)>4) msg.value=previous; editorState.message=msg.value; updateCount(); });
   sig.addEventListener("input",()=>{ beginComposition(); editorState.signature=sig.value; });
-  consent.addEventListener("change",()=>editorState.reuseConsent=consent.checked);
   updateCount();
 
-  document.querySelector("#back").onclick=()=>{ editorState.message=msg.value; editorState.signature=sig.value; editorState.reuseConsent=consent.checked; renderChooser(); };
-  document.querySelector("#send").onclick=()=>createBillet(msg.value,sig.value,consent.checked,visualLines(msg));
+  document.querySelector("#back").onclick=()=>{ editorState.message=msg.value; editorState.signature=sig.value; renderChooser(); };
+  document.querySelector("#send").onclick=()=>createBillet(msg.value,sig.value,visualLines(msg));
 }
 
-async function createBillet(message, signature, reuseConsent, visualLineCount){
+async function createBillet(message, signature, visualLineCount){
   message=message.trim(); signature=signature.trim();
   if(!message){ showToast("Écris quelques mots d’abord"); return; }
   if(!signature){ showToast("Ajoute ta signature"); return; }
@@ -127,17 +196,21 @@ async function createBillet(message, signature, reuseConsent, visualLineCount){
       card_id:currentCard().id,
       message,
       signature,
-      reuse_artistic:reuseConsent,
-      reuse_consent_version:"2026-09-v1",
+      reuse_artistic:true,
+      reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.1"
+      app_version:"sv-1.3"
     })});
-    const data=await res.json();
+    const raw=await res.text();
+    let data;
+    try{ data=JSON.parse(raw); }catch(_){ throw new Error(raw || `HTTP ${res.status}`); }
     if(!res.ok || !data.ok) throw new Error(data.error||"Création impossible");
     renderResult(data.slug);
   }catch(err){
-    console.error(err); showToast("Impossible de créer le billet"); button.disabled=false; button.textContent="Envoyer";
+    console.error("createBillet failed:",err);
+    showToast("Impossible de créer le billet");
+    button.disabled=false; button.textContent="Envoyer";
   }
 }
 
@@ -160,7 +233,7 @@ function renderResult(slug){
       await navigator.clipboard.writeText(url); trackEvent(slug,"share"); showToast("Lien copié");
     }
   };
-  document.querySelector("#another").onclick=()=>{ editorState={message:"",signature:"",reuseConsent:false}; history.pushState({},"","/"); route(); };
+  document.querySelector("#another").onclick=()=>{ editorState={message:"",signature:""}; history.pushState({},"","/"); route(); };
 }
 
 async function renderRecipient(slug){

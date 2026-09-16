@@ -73,3 +73,7 @@ Le format demandé (`/amandine`, `/amandine-2`…) est volontairement simple et 
 6. Netlify exécute `npm run build`, détecte automatiquement les cartes, puis publie `site/`.
 
 Le code des fonctions utilise le format moderne `Request` / `Response` des Netlify Functions.
+
+
+## Réutilisation artistique
+La v1.3 ne présente pas de case à cocher dans l’interface. L’information sur la réutilisation artistique des mots doit être communiquée clairement en amont de la création du billet. Le site enregistre chaque message dans `Corpus` sans signature, slug ni identifiant de billet réutilisable.
