@@ -1,0 +1,31 @@
+[build]
+  command = "npm run build"
+  publish = "site"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/create"
+  to = "/.netlify/functions/create-billet"
+  status = 200
+
+[[redirects]]
+  from = "/api/billet"
+  to = "/.netlify/functions/get-billet"
+  status = 200
+
+[[redirects]]
+  from = "/api/event"
+  to = "/.netlify/functions/event"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+    X-Content-Type-Options = "nosniff"
