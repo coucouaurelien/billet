@@ -1,4 +1,4 @@
-# Saint-Valentin — pack Netlify v1.1
+# Saint-Valentin — pack Netlify v1.4
 
 ## Parcours
 
@@ -77,3 +77,8 @@ Le code des fonctions utilise le format moderne `Request` / `Response` des Netli
 
 ## Réutilisation artistique
 La v1.3 ne présente pas de case à cocher dans l’interface. L’information sur la réutilisation artistique des mots doit être communiquée clairement en amont de la création du billet. Le site enregistre chaque message dans `Corpus` sans signature, slug ni identifiant de billet réutilisable.
+
+## Diagnostic backend
+Après le déploiement, ouvre `/api/health`. Cette route vérifie sans révéler les secrets : variables Netlify → Apps Script → Google Sheet.
+
+Avant le premier déploiement, exécute impérativement `setup()` une fois dans Apps Script.

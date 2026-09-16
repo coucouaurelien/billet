@@ -18,10 +18,46 @@ const CORPUS_HEADERS = [
   'consent_version'
 ];
 
+
+/**
+ * À exécuter UNE FOIS manuellement depuis l'éditeur Apps Script.
+ * Cette fonction mémorise l'ID du Google Sheet parent, crée les onglets
+ * nécessaires et force la demande d'autorisation Google avant le déploiement.
+ */
+function setup() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('Ouvre Apps Script depuis le Google Sheet (Extensions > Apps Script), puis relance setup().');
+  PropertiesService.getScriptProperties().setProperty('BILLET_SPREADSHEET_ID', ss.getId());
+  ensureSheet_(BILLETS_SHEET, BILLETS_HEADERS);
+  ensureSheet_(CORPUS_SHEET, CORPUS_HEADERS);
+  SpreadsheetApp.flush();
+  return 'OK — Sheet relié : ' + ss.getName();
+}
+
+function getSpreadsheet_() {
+  const props = PropertiesService.getScriptProperties();
+  const savedId = props.getProperty('BILLET_SPREADSHEET_ID');
+  if (savedId) {
+    try { return SpreadsheetApp.openById(savedId); }
+    catch (err) { throw new Error('Google Sheet inaccessible. Relance setup() dans Apps Script.'); }
+  }
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) {
+    props.setProperty('BILLET_SPREADSHEET_ID', active.getId());
+    return active;
+  }
+  throw new Error('Google Sheet non configuré. Exécute setup() une fois dans Apps Script.');
+}
+
 function doGet(e) {
   try {
     assertSecret_(e.parameter.secret);
-    if ((e.parameter.action || '') !== 'get') return out_({ok:false,error:'Bad action'});
+    const action = (e.parameter.action || '');
+    if (action === 'ping') {
+      const ss = getSpreadsheet_();
+      return out_({ok:true,service:'billet-sheet',sheet_ready:!!ss});
+    }
+    if (action !== 'get') return out_({ok:false,error:'Bad action'});
     const slug = cleanSlug_(e.parameter.slug || '');
     const row = findBySlug_(slug);
     if (!row) return out_({ok:false,error:'Not found'});
@@ -151,7 +187,7 @@ function stats_(message) {
 }
 
 function ensureSheet_(name, headers) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
   if (sheet.getLastRow() === 0) sheet.appendRow(headers);

@@ -1,22 +1,56 @@
-# Google Sheet — branchement
+# Relier le site à Google Sheets
 
-Tu peux partir d’un Google Sheet totalement vide : le script crée lui-même les onglets `Billets` et `Corpus` et leurs colonnes.
+## 1 — Créer le Sheet
+Crée un Google Sheet vide, puis ouvre **Extensions > Apps Script** depuis CE Sheet.
 
-1. Crée un Google Sheet vide, par exemple `Billets Saint-Valentin`.
-2. Extensions → Apps Script.
-3. Remplace le contenu de `Code.gs` par le fichier `Code.gs` fourni ici.
-4. Apps Script → Paramètres du projet → Propriétés du script : crée `BILLET_API_SECRET` avec une longue chaîne aléatoire.
-5. Déployer → Nouveau déploiement → Application Web. Exécuter en tant que toi. Donne l’accès nécessaire pour que l’appel serveur Netlify puisse atteindre le script.
-6. Copie l’URL `/exec` du déploiement.
-7. Dans Netlify, ajoute :
-   - `GOOGLE_SCRIPT_URL` = URL `/exec`
-   - `BILLET_API_SECRET` = exactement le même secret
-8. Redéploie Netlify.
+## 2 — Coller le code
+Remplace le contenu de l’éditeur par `Code.gs`.
 
-## Les deux onglets
+## 3 — Mettre le secret
+Dans **Paramètres du projet > Propriétés du script**, crée :
 
-### Billets
-Onglet opérationnel : il contient ce qui permet d’afficher les billets et de compter les usages. Il comprend donc la signature et le slug public.
+- clé : `BILLET_API_SECRET`
+- valeur : ton secret long et aléatoire
 
-### Corpus
-Onglet artistique : une ligne n’y est créée que si la case de consentement est cochée. Il ne contient ni signature, ni slug, ni identifiant du billet, ni IP, ni e-mail, ni téléphone, ni appareil. Il garde le texte, l’illustration choisie et quelques caractéristiques formelles du message.
+La même valeur doit être mise dans Netlify sous `BILLET_API_SECRET`.
+
+## 4 — Étape importante : lancer setup()
+Dans la barre en haut de l’éditeur Apps Script, sélectionne la fonction **`setup`**, puis clique sur **Exécuter**.
+
+Google te demandera d’autoriser l’accès au Sheet. Accepte.
+
+`setup()` :
+- mémorise explicitement l’ID de ce Google Sheet ;
+- crée les onglets `Billets` et `Corpus` ;
+- évite de dépendre de `getActiveSpreadsheet()` pendant les appels de la Web App.
+
+Tu dois voir `Billets` et `Corpus` apparaître dans ton Google Sheet.
+
+## 5 — Déployer comme Web App
+**Déployer > Nouveau déploiement > Application Web**
+
+- Exécuter en tant que : **Moi**
+- Qui a accès : **Tout le monde** / **Anyone**
+
+Copie l’URL qui finit par `/exec`.
+
+## 6 — Netlify
+Dans les variables d’environnement :
+
+- `GOOGLE_SCRIPT_URL` = URL `/exec`
+- `BILLET_API_SECRET` = exactement le même secret
+
+Puis redéploie le site.
+
+## 7 — Diagnostic
+Après déploiement, ouvre :
+
+`https://TON-SITE.netlify.app/api/health`
+
+Si tout va bien, tu obtiens notamment :
+
+```json
+{"ok":true,"netlify":true,"apps_script":true,"sheet_ready":true}
+```
+
+Cette route ne révèle ni le secret ni l’URL Apps Script.

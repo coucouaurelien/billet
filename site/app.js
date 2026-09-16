@@ -209,7 +209,7 @@ async function createBillet(message, signature, visualLineCount){
     renderResult(data.slug);
   }catch(err){
     console.error("createBillet failed:",err);
-    showToast("Impossible de créer le billet");
+    showToast(err?.message || "Impossible de créer le billet");
     button.disabled=false; button.textContent="Envoyer";
   }
 }
