@@ -9,6 +9,44 @@ let compositionStartedAt = null;
 const escapeHtml = (value="") => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const currentCard = () => CARDS[cardIndex];
 
+const cardById = (id) => CARDS.find(card => card.id === id) || CARDS[0];
+
+function loadingMarkup(cardSrc=""){
+  const style = cardSrc ? ` style="--loading-image:url('${cardSrc}')"` : "";
+  return `
+    <section class="recipient-stage loading-stage">
+      <div class="loading-shell" aria-live="polite">
+        <div class="loading-art"${style}><div class="loading-veil"></div></div>
+        <div class="loading-copy">Ouverture du billet…</div>
+      </div>
+    </section>`;
+}
+
+function renderRecipientView(data, slug){
+  const card = cardById(data.card_id);
+  app.innerHTML=`
+    <section class="recipient-stage">
+      <div class="flip-wrap recipient recipient-card" id="recipientCard">
+        <div class="flip-card" id="flipCard">
+          <div class="face front"><img src="${card.src}" alt=""></div>
+          <div class="face back">
+            <div class="message recipient-message">${escapeHtml(data.message)}</div>
+            <div class="signature recipient-signature">${escapeHtml(data.signature)}</div>
+          </div>
+        </div>
+      </div>
+      <div class="recipient-note" id="recipientNote">Clic sur la carte</div>
+      <a class="recipient-create" id="recipientCreate" href="/">Moi aussi, écrire mon billet</a>
+    </section>`;
+  let open=false;
+  document.querySelector("#recipientCard").onclick=()=>{
+    open=!open;
+    document.querySelector("#flipCard").classList.toggle("is-flipped",open);
+    document.querySelector("#recipientNote").textContent=open?"":"Clic sur la carte";
+    document.querySelector("#recipientCreate").classList.toggle("visible",open);
+  };
+}
+
 const fontReady = (() => {
   try {
     if (document.fonts?.load) {
@@ -290,7 +328,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.9"
+      app_version:"sv-1.10"
     })});
     const raw=await res.text();
     let data;
@@ -322,61 +360,35 @@ function renderResult(slug){
     <div class="footer"><button class="text-button" id="another">Créer un autre billet</button></div>`;
   document.querySelector("#share").onclick=async()=>{
     if(navigator.share){
-      try{ await navigator.share({title:"Billet Doux",url}); trackEvent(slug,"share"); }catch(e){}
+      try{ await navigator.share({title:"Billet Doux",url}); }catch(e){}
     } else {
-      await navigator.clipboard.writeText(url); trackEvent(slug,"share"); showToast("Lien prêt à être collé dans ton message");
+      await navigator.clipboard.writeText(url); showToast("Lien prêt à être collé dans ton message");
     }
   };
   document.querySelector("#another").onclick=()=>{ editorState={message:"",signature:""}; history.pushState({},"","/"); route(); };
 }
 
 async function renderRecipient(slug){
-  app.innerHTML=`
-    <section class="recipient-stage loading-stage">
-      <div class="loading-shell" aria-live="polite">
-        <div class="loading-mail-wrap">
-          <img class="loading-mail" src="/assets/ui/mail-gold.png" alt="">
-          <div class="loading-shadow"></div>
-        </div>
-        <div class="loading-copy">Ouverture du billet…</div>
-      </div>
-    </section>`;
+  const preloaded = window.SV_PRELOADED_BILLET && window.SV_PRELOADED_BILLET.slug === slug
+    ? window.SV_PRELOADED_BILLET
+    : null;
+  app.innerHTML = loadingMarkup(cardById(preloaded?.card_id)?.src || "");
   try{
-    const res=await fetch(`/api/billet?slug=${encodeURIComponent(slug)}`);
-    const data=await res.json();
-    if(!res.ok || !data.ok) throw new Error("Billet introuvable");
-    const card=CARDS.find(c=>c.id===data.card_id) || CARDS[0];
-    app.innerHTML=`
-      <section class="recipient-stage">
-        <div class="flip-wrap recipient recipient-card" id="recipientCard">
-          <div class="flip-card" id="flipCard">
-            <div class="face front"><img src="${card.src}" alt=""></div>
-            <div class="face back">
-              <div class="message recipient-message">${escapeHtml(data.message)}</div>
-              <div class="signature recipient-signature">${escapeHtml(data.signature)}</div>
-            </div>
-          </div>
-        </div>
-        <div class="recipient-note" id="recipientNote">Clic sur la carte</div>
-        <a class="recipient-create" id="recipientCreate" href="/">Moi aussi, écrire mon billet</a>
-      </section>`;
-    let open=false, revealTracked=false;
-    document.querySelector("#recipientCard").onclick=()=>{
-      open=!open;
-      document.querySelector("#flipCard").classList.toggle("is-flipped",open);
-      document.querySelector("#recipientNote").textContent=open?"":"Clic sur la carte";
-      document.querySelector("#recipientCreate").classList.toggle("visible",open);
-      if(open && !revealTracked){ revealTracked=true; trackEvent(slug,"reveal"); }
-    };
-    trackEvent(slug,"view");
+    let data = preloaded;
+    if(!data){
+      const res = await fetch(`/api/billet?slug=${encodeURIComponent(slug)}`);
+      const payload = await res.json();
+      if(!res.ok || !payload.ok) throw new Error("Billet introuvable");
+      data = payload;
+    } else {
+      await new Promise(resolve => setTimeout(resolve, 140));
+    }
+    renderRecipientView(data, slug);
   }catch(err){
     app.innerHTML=`<section class="recipient-stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div><a class="recipient-create visible" href="/">Moi aussi, écrire mon billet</a></section>`;
   }
 }
 
-function trackEvent(slug,type){
-  fetch("/api/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug,type})}).catch(()=>{});
-}
 
 window.addEventListener("popstate",route);
 route();

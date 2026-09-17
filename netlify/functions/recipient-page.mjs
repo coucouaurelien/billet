@@ -3,7 +3,10 @@ export default async (req) => {
   const slug = (url.searchParams.get("slug") || "").trim();
   const origin = url.origin;
   const canonical = `${origin}/${encodeURIComponent(slug)}`;
-  const image = `${origin}/assets/og/mail-preview.jpg?v=19`;
+  const billet = slug ? await fetchBillet(slug) : null;
+  const cardId = billet?.card_id || "boule";
+  const image = `${origin}/assets/og/cards/${encodeURIComponent(cardId)}.jpg?v=110`;
+  const preloaded = billet ? `<script>window.SV_PRELOADED_BILLET=${safeJson({slug, card_id: billet.card_id, message: billet.message, signature: billet.signature})};</script>` : "";
   const html = `<!doctype html>
 <html lang="fr">
 <head>
@@ -37,11 +40,31 @@ export default async (req) => {
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/cards.generated.js"></script>
   <script src="/config.js"></script>
+  ${preloaded}
   <script src="/app.js" defer></script>
 </body>
 </html>`;
   return new Response(html,{status:200,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"}});
 };
+
+async function fetchBillet(slug){
+  const endpoint = process.env.GOOGLE_SCRIPT_URL;
+  const secret = process.env.BILLET_API_SECRET;
+  if(!endpoint || !secret || !slug) return null;
+  try{
+    const target = `${endpoint}?action=get&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(secret)}`;
+    const res = await fetch(target,{redirect:"follow"});
+    const data = await res.json();
+    if(!res.ok || !data?.ok) return null;
+    return data;
+  }catch(_){
+    return null;
+  }
+}
+
+function safeJson(value){
+  return JSON.stringify(value).replace(/</g,"\u003c").replace(/>/g,"\u003e").replace(/&/g,"\u0026");
+}
 
 function escapeAttr(v=""){
   return String(v).replace(/[&"'<>]/g,c=>({"&":"&amp;","\"":"&quot;","'":"&#39;","<":"&lt;",">":"&gt;"}[c]));
