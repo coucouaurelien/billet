@@ -133,6 +133,7 @@ function renderChooser(){
     pointerDown=true; dragged=false; startX=e.clientX; startScroll=carousel.scrollLeft;
     carousel.classList.add("dragging");
     carousel.setPointerCapture?.(e.pointerId);
+    cancelSwipeDemo();
   });
   carousel.addEventListener("pointermove",e=>{
     if(!pointerDown) return;
@@ -157,15 +158,51 @@ function renderChooser(){
     if(Math.abs(e.deltaY) > Math.abs(e.deltaX)){
       e.preventDefault();
       carousel.scrollLeft += e.deltaY;
+      cancelSwipeDemo();
     }
   },{passive:false});
 
   const initialVirtual = n + cardIndex;
+  let demoTimers = [];
+  let demoCancelled = false;
+  function cancelSwipeDemo(){
+    if(demoCancelled) return;
+    demoCancelled = true;
+    demoTimers.forEach(clearTimeout);
+    demoTimers = [];
+    carousel.classList.remove("demoing");
+  }
+  ["touchstart","wheel"].forEach(type=>carousel.addEventListener(type,cancelSwipeDemo,{passive:true,once:true}));
+
+  function maybePlaySwipeDemo(){
+    if(n < 3 || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    carousel.classList.add("demoing");
+    const base = n + cardIndex;
+    const path = [base + 1, base + 2, base];
+    path.forEach((virtual, stepIndex)=>{
+      demoTimers.push(setTimeout(()=>{
+        if(demoCancelled) return;
+        setActiveFromVirtual(virtual);
+        centerVirtual(virtual, "smooth");
+      }, 650 + stepIndex * 900));
+    });
+    demoTimers.push(setTimeout(()=>{
+      if(!demoCancelled){
+        carousel.classList.remove("demoing");
+        normalizeLoop();
+      }
+    }, 3550));
+  }
+
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     centerVirtual(initialVirtual,"auto");
     setActiveFromVirtual(initialVirtual);
+    maybePlaySwipeDemo();
   }));
-  window.onresize=()=>centerVirtual(n+cardIndex,"auto");
+  window.onresize=()=>{
+    if(!document.querySelector("#carousel")) return;
+    centerVirtual(n+cardIndex,"auto");
+  };
 }
 
 function renderEditor(){
@@ -173,7 +210,7 @@ function renderEditor(){
   compositionStartedAt = null;
   app.innerHTML = `
     ${shell("Écris ton billet", '<button class="text-button" id="back">← Changer de carte</button>')}
-    <section class="stage">
+    <section class="stage editor-stage">
       <div class="flip-wrap">
         <div class="flip-card" id="flipCard">
           <div class="face front"><img src="${card.src}" alt=""></div>
@@ -198,9 +235,14 @@ function renderEditor(){
   function visualLines(el){
     if(!el.value) return 0;
     const cs=getComputedStyle(el), mirror=document.createElement("div");
-    Object.assign(mirror.style,{position:"absolute",visibility:"hidden",pointerEvents:"none",whiteSpace:"pre-wrap",wordBreak:"break-word",overflowWrap:"break-word",width:el.clientWidth+"px",font:cs.font,letterSpacing:cs.letterSpacing,lineHeight:cs.lineHeight});
+    Object.assign(mirror.style,{
+      position:"absolute",visibility:"hidden",pointerEvents:"none",whiteSpace:"pre-wrap",wordBreak:"break-word",overflowWrap:"break-word",
+      boxSizing:"border-box",width:cs.width,fontFamily:cs.fontFamily,fontSize:cs.fontSize,fontWeight:cs.fontWeight,fontStyle:cs.fontStyle,
+      letterSpacing:cs.letterSpacing,lineHeight:cs.lineHeight,paddingLeft:cs.paddingLeft,paddingRight:cs.paddingRight,paddingTop:cs.paddingTop,paddingBottom:cs.paddingBottom,border:"0"
+    });
     mirror.textContent=el.value||" "; document.body.appendChild(mirror);
-    const lines=Math.max(1,Math.round(mirror.scrollHeight/parseFloat(cs.lineHeight))); mirror.remove(); return lines;
+    const contentHeight = mirror.scrollHeight - parseFloat(cs.paddingTop||0) - parseFloat(cs.paddingBottom||0);
+    const lines=Math.max(1,Math.round(contentHeight/parseFloat(cs.lineHeight))); mirror.remove(); return lines;
   }
   let previous=msg.value;
   function updateCount(){
@@ -233,7 +275,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.5"
+      app_version:"sv-1.7"
     })});
     const raw=await res.text();
     let data;
@@ -255,21 +297,19 @@ function renderResult(slug){
     <section class="stage"><div class="result">
       <h1>Il ne reste plus qu’à le faire voyager.</h1>
       <div class="result-actions">
-        <button class="gold-button result-button" id="copy">Copier le lien</button>
-        <button class="gold-button result-button" id="share">Partager</button>
+        <button class="gold-button result-button" id="share">Envoyer par message</button>
+        <div class="physical-wrap">
+          <a class="gold-button result-button result-link-button" id="physical" href="${escapeHtml(physicalUrl)}" target="_blank" rel="noopener">Envoyer dans un véritable courrier</a>
+          <div class="physical-sub">Écrit à la main, au dos d’une risographie, et posté directement à ton crush</div>
+        </div>
       </div>
-      <a class="physical-cta" href="${escapeHtml(physicalUrl)}" target="_blank" rel="noopener">
-        <span class="physical-title">Envoyer dans un véritable courrier</span>
-        <span class="physical-sub">Écrit à la main et posté à ton crush · 10 €</span>
-      </a>
     </div></section>
     <div class="footer"><button class="text-button" id="another">Créer un autre billet</button></div>`;
-  document.querySelector("#copy").onclick=async()=>{ await navigator.clipboard.writeText(url); trackEvent(slug,"share"); showToast("Lien copié"); };
   document.querySelector("#share").onclick=async()=>{
     if(navigator.share){
       try{ await navigator.share({title:"Billet Doux",url}); trackEvent(slug,"share"); }catch(e){}
     } else {
-      await navigator.clipboard.writeText(url); trackEvent(slug,"share"); showToast("Lien copié");
+      await navigator.clipboard.writeText(url); trackEvent(slug,"share"); showToast("Lien prêt à être collé dans ton message");
     }
   };
   document.querySelector("#another").onclick=()=>{ editorState={message:"",signature:""}; history.pushState({},"","/"); route(); };
@@ -294,7 +334,7 @@ async function renderRecipient(slug){
           </div>
         </div>
         <div class="recipient-note" id="recipientNote">Clic sur la carte</div>
-        <a class="recipient-create" id="recipientCreate" href="/">Écrire mon billet</a>
+        <a class="recipient-create" id="recipientCreate" href="/">Moi aussi, écrire mon billet</a>
       </section>`;
     let open=false, revealTracked=false;
     document.querySelector("#recipientCard").onclick=()=>{
@@ -306,7 +346,7 @@ async function renderRecipient(slug){
     };
     trackEvent(slug,"view");
   }catch(err){
-    app.innerHTML=`<section class="recipient-stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div><a class="recipient-create visible" href="/">Écrire mon billet</a></section>`;
+    app.innerHTML=`<section class="recipient-stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div><a class="recipient-create visible" href="/">Moi aussi, écrire mon billet</a></section>`;
   }
 }
 

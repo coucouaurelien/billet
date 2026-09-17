@@ -17,7 +17,7 @@ export default async (req) => {
   const letter = initialKey(signature || slug);
   const origin = url.origin;
   const canonical = `${origin}/${encodeURIComponent(slug)}`;
-  const image = `${origin}/assets/og/initial-${letter}.png?v=16-${encodeURIComponent(slug)}`;
+  const image = `${origin}/assets/og/initial-${letter}.png?v=17-${encodeURIComponent(slug)}`;
   const html = `<!doctype html>
 <html lang="fr">
 <head>
@@ -26,15 +26,20 @@ export default async (req) => {
   <meta name="robots" content="noindex,nofollow">
   <meta name="theme-color" content="#050505">
   <title>Billet Doux</title>
+  <meta name="description" content="Billet Doux">
   <meta property="og:title" content="Billet Doux">
+  <meta property="og:description" content="Billet Doux">
   <meta property="og:type" content="website">
   <meta property="og:url" content="${escapeAttr(canonical)}">
   <meta property="og:image" content="${escapeAttr(image)}">
+  <meta property="og:image:secure_url" content="${escapeAttr(image)}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:type" content="image/png">
+  <meta property="og:image:alt" content="Billet Doux">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Billet Doux">
+  <meta name="twitter:description" content="Billet Doux">
   <meta name="twitter:image" content="${escapeAttr(image)}">
   <link rel="canonical" href="${escapeAttr(canonical)}">
   <link rel="stylesheet" href="/styles.css">
@@ -47,7 +52,7 @@ export default async (req) => {
   <script src="/app.js" defer></script>
 </body>
 </html>`;
-  return new Response(html,{status:200,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"public, max-age=60"}});
+  return new Response(html,{status:200,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"}});
 };
 
 function initialKey(value=""){
