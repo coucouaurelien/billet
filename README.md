@@ -1,84 +1,38 @@
-# Saint-Valentin — pack Netlify v1.4
+# Billet Doux — pack Netlify v1.5
 
-## Parcours
+## Nouveautés
+- Carrousel réellement infini : après la dernière illustration, la première revient sans fin.
+- Swipe mobile + drag souris/trackpad, cartes voisines visibles.
+- Nouveau texte d’introduction et indication « Touche la carte pour écrire ».
+- Écran final épuré : seulement « Copier le lien » et « Partager ».
+- CTA courrier physique discret sous les boutons de partage.
+- Vue destinataire plein écran mobile, sans « Un billet pour toi ».
+- Après ouverture du billet : lien « Écrire mon billet ».
+- Aperçu de partage : titre « Billet Doux » + image construite avec l’initiale de la signature.
+- Support de la typo propriétaire Coucouaurelien pour le message et la signature.
 
-1. L’utilisateur feuillette les illustrations.
-2. Il clique sur une carte : retournement modéré (`1.12 s`) et écriture au verso.
-3. Message limité à 4 lignes visuelles / 170 caractères + signature.
-4. Il clique sur `Envoyer` : création d’un billet et d’un slug dérivé de la signature.
-5. Exemple : `billet.coucouaurelien.com/amandine`, puis `amandine-2`, `amandine-3`, etc.
-6. Rien n’est envoyé automatiquement. L’utilisateur partage le lien lui-même via le partage natif ou en le copiant.
-7. Le destinataire voit d’abord l’illustration puis clique pour retourner la carte et lire le message.
+## Police propriétaire — UNE ACTION MANUELLE
+Le fichier de police n’est pas inclus dans ce pack.
+Renomme ta police :
+`Coucouaurelien-V2-Regular.otf`
 
-## Ajouter des illustrations
+Puis dépose-la dans :
+`site/assets/fonts/`
 
-Il n’y a plus de tableau de cartes à modifier à la main.
+Le CSS est déjà configuré. Après le commit GitHub, Netlify redéploie automatiquement.
 
-- Dépose simplement les `.png`, `.jpg`, `.jpeg`, `.webp` ou `.avif` dans `site/assets/cards/`.
-- À chaque build Netlify, `scripts/build-cards.mjs` scanne le dossier et régénère `site/cards.generated.js`.
-- Le nom du fichier sert automatiquement de libellé interne.
+Les images d’aperçu A–Z sont déjà rasterisées avec la typo pour afficher l’initiale dans les aperçus de partage.
 
-Les 3 riso actuellement disponibles sont déjà incluses. Si d’autres images sont présentes dans ton dépôt au moment du build, elles seront ajoutées automatiquement.
+## Lien vers l’offre courrier physique
+Édite :
+`site/config.js`
 
-## Google Sheet : ce qui est enregistré
+Et remplace `physicalMailUrl` par l’URL exacte de ta page boutique dédiée.
+La valeur actuelle renvoie simplement vers `https://coucouaurelien.com`.
 
-### Onglet `Billets` — fonctionnement et mesure
-- identifiant technique aléatoire ;
-- date de création ;
-- slug et numéro de doublon ;
-- illustration choisie ;
-- signature ;
-- message ;
-- nombre de caractères, mots, lignes saisies et lignes réellement occupées visuellement ;
-- retours à la ligne ;
-- emojis ;
-- `!`, `?`, points de suspension ;
-- temps approximatif passé à composer le billet, plafonné à 1 h ;
-- consentement à la réutilisation artistique + version du texte de consentement ;
-- nombre de visites ;
-- première / dernière visite ;
-- nombre de révélations du verso ;
-- première / dernière révélation ;
-- délai entre création et première révélation ;
-- nombre d’actions de partage ;
-- dernière action de partage ;
-- version de l’app.
+## Mise à jour
+Tu peux uploader le contenu complet de ce dossier par-dessus le dépôt GitHub existant puis faire Commit changes.
+Netlify rebâtira automatiquement le site si le dépôt est connecté.
 
-L’app ne demande ni compte, ni e-mail, ni téléphone, ni géolocalisation et n’enregistre dans le Sheet ni IP, ni user-agent, ni referrer.
-
-### Onglet `Corpus` — matière artistique
-Créé uniquement si la personne coche : « J’accepte que mon message, sans ma signature, puisse nourrir de futurs projets artistiques. »
-
-Il contient uniquement :
-- un identifiant de corpus indépendant ;
-- date de création ;
-- illustration choisie ;
-- texte ;
-- métriques de forme (longueur, mots, lignes saisies et visuelles, emojis, ponctuation, temps de composition) ;
-- version du consentement.
-
-Il ne contient **ni signature, ni slug, ni identifiant du billet**. C’est cet onglet qu’il faut utiliser pour une future analyse éditoriale ou artistique.
-
-## Important sur les liens
-
-Le format demandé (`/amandine`, `/amandine-2`…) est volontairement simple et beau, mais il est aussi devinable. `noindex` empêche l’indexation par les moteurs de recherche ; il ne transforme pas l’URL en secret cryptographique. Si un jour tu veux des billets réellement difficiles à deviner, il faudra ajouter un petit suffixe aléatoire.
-
-## Déploiement
-
-1. Mets ce dossier dans ton dépôt Git connecté à Netlify.
-2. Mets tes illustrations dans `site/assets/cards/`.
-3. Suis `google-apps-script/README.md` pour brancher un Google Sheet vide.
-4. Dans Netlify, renseigne `GOOGLE_SCRIPT_URL` et `BILLET_API_SECRET`.
-5. Rattache `billet.coucouaurelien.com` au site.
-6. Netlify exécute `npm run build`, détecte automatiquement les cartes, puis publie `site/`.
-
-Le code des fonctions utilise le format moderne `Request` / `Response` des Netlify Functions.
-
-
-## Réutilisation artistique
-La v1.3 ne présente pas de case à cocher dans l’interface. L’information sur la réutilisation artistique des mots doit être communiquée clairement en amont de la création du billet. Le site enregistre chaque message dans `Corpus` sans signature, slug ni identifiant de billet réutilisable.
-
-## Diagnostic backend
-Après le déploiement, ouvre `/api/health`. Cette route vérifie sans révéler les secrets : variables Netlify → Apps Script → Google Sheet.
-
-Avant le premier déploiement, exécute impérativement `setup()` une fois dans Apps Script.
+## Apps Script
+Cette version ne change pas le schéma Google Sheet. Tu peux conserver le Code.gs de la v1.4 si celui-ci est déjà installé et déployé.

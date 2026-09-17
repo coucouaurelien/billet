@@ -1,4 +1,5 @@
 const CARDS = Array.isArray(window.SV_CARDS) ? window.SV_CARDS : [];
+const CONFIG = window.SV_CONFIG || {};
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
 let cardIndex = 0;
@@ -25,19 +26,24 @@ function route(){
   else renderChooser();
 }
 
-function shell(eyebrow, right=""){
+function shell(eyebrow="", right=""){
   return `<div class="topbar"><div class="eyebrow">${eyebrow}</div>${right}</div>`;
 }
 
 function renderChooser(){
+  const loopCards = [...CARDS, ...CARDS, ...CARDS];
+  const n = CARDS.length;
   app.innerHTML = `
-    ${shell("Choisis une carte")}
-    <section class="stage">
+    <section class="chooser-stage">
+      <div class="chooser-copy">Choisis la carte que tu souhaites envoyer à ton crush.</div>
       <div class="carousel-shell">
         <div class="carousel" id="carousel" aria-label="Illustrations à choisir">
-          ${CARDS.map((c,i)=>`<button class="card-thumb ${i===cardIndex?'active':''}" data-index="${i}" aria-label="Choisir ${escapeHtml(c.label)}"><img src="${c.src}" alt=""></button>`).join("")}
+          ${loopCards.map((c,virtual)=>{
+            const logical = virtual % n;
+            return `<button class="card-thumb ${logical===cardIndex && virtual>=n && virtual<2*n?'active':''}" data-index="${logical}" data-virtual="${virtual}" aria-label="Choisir ${escapeHtml(c.label)}"><img src="${c.src}" alt=""></button>`;
+          }).join("")}
         </div>
-        <div class="hint">Fais glisser · touche la carte pour écrire</div>
+        <div class="hint">Touche la carte pour écrire</div>
       </div>
     </section>
     <div class="footer"></div>`;
@@ -49,41 +55,55 @@ function renderChooser(){
   let dragged = false;
   let startX = 0;
   let startScroll = 0;
+  let relooping = false;
 
-  function centerCard(index, behavior="smooth"){
-    const el = cards[index];
-    if(!el) return;
-    // scrollIntoView + scroll-snap donne un centrage fiable sur iOS/Safari/desktop.
-    el.scrollIntoView({ behavior, block:"nearest", inline:"center" });
+  function cardCenterScrollLeft(el){
+    return el.offsetLeft + el.clientWidth/2 - carousel.clientWidth/2;
   }
-
-  function nearestIndex(){
+  function centerVirtual(virtual, behavior="smooth"){
+    const el = cards[virtual];
+    if(!el) return;
+    carousel.scrollTo({left:cardCenterScrollLeft(el), behavior});
+  }
+  function nearestVirtual(){
     const center = carousel.scrollLeft + carousel.clientWidth/2;
     let best = 0, dist = Infinity;
     cards.forEach((el,i)=>{
-      const cardCenter = el.offsetLeft + el.clientWidth/2;
-      const d = Math.abs(cardCenter-center);
-      if(d<dist){dist=d;best=i;}
+      const d = Math.abs((el.offsetLeft + el.clientWidth/2)-center);
+      if(d<dist){ dist=d; best=i; }
     });
     return best;
   }
-
-  function setActive(index){
-    cardIndex = index;
-    cards.forEach((el,i)=>el.classList.toggle("active",i===index));
+  function setActiveFromVirtual(virtual){
+    const logical = ((virtual % n) + n) % n;
+    cardIndex = logical;
+    cards.forEach((el,i)=>el.classList.toggle("active", i===virtual));
+  }
+  function normalizeLoop(){
+    if(relooping) return;
+    const v = nearestVirtual();
+    setActiveFromVirtual(v);
+    let target = v;
+    if(v < n) target = v + n;
+    else if(v >= 2*n) target = v - n;
+    if(target !== v){
+      relooping = true;
+      requestAnimationFrame(()=>{
+        centerVirtual(target,"auto");
+        setActiveFromVirtual(target);
+        requestAnimationFrame(()=>{ relooping=false; });
+      });
+    }
   }
 
   carousel.addEventListener("scroll",()=>{
-    setActive(nearestIndex());
+    if(relooping) return;
+    setActiveFromVirtual(nearestVirtual());
     clearTimeout(scrollTimer);
-    // On laisse le snap natif finir le geste : aucune correction agressive pendant le swipe.
-    scrollTimer = setTimeout(()=>setActive(nearestIndex()),140);
+    scrollTimer = setTimeout(normalizeLoop, 150);
   },{passive:true});
-  if("onscrollend" in window){
-    carousel.addEventListener("scrollend",()=>setActive(nearestIndex()),{passive:true});
-  }
+  if("onscrollend" in window){ carousel.addEventListener("scrollend",normalizeLoop,{passive:true}); }
 
-  // Sur tactile, mémorise le déplacement pour qu’un swipe ne déclenche pas l’ouverture.
   let touchStartX = 0;
   carousel.addEventListener("touchstart",e=>{
     touchStartX = e.touches[0]?.clientX || 0;
@@ -95,13 +115,19 @@ function renderChooser(){
   },{passive:true});
 
   cards.forEach(btn=>btn.addEventListener("click",()=>{
-    const i = Number(btn.dataset.index);
+    const logical = Number(btn.dataset.index);
+    const virtual = Number(btn.dataset.virtual);
     if(dragged){ dragged=false; return; }
-    if(i !== cardIndex){ setActive(i); centerCard(i); }
-    else renderEditor();
+    const centered = nearestVirtual();
+    if(virtual !== centered){
+      setActiveFromVirtual(virtual);
+      centerVirtual(virtual);
+      return;
+    }
+    cardIndex = logical;
+    renderEditor();
   }));
 
-  // Souris/trackpad sur ordinateur : on peut attraper la rangée comme une bande de cartes.
   carousel.addEventListener("pointerdown",e=>{
     if(e.pointerType === "touch") return;
     pointerDown=true; dragged=false; startX=e.clientX; startScroll=carousel.scrollLeft;
@@ -116,14 +142,17 @@ function renderChooser(){
   });
   function stopDrag(e){
     if(!pointerDown) return;
-    pointerDown=false; carousel.classList.remove("dragging");
+    pointerDown=false;
+    carousel.classList.remove("dragging");
     try{ carousel.releasePointerCapture?.(e.pointerId); }catch(_){ }
-    setActive(nearestIndex()); centerCard(cardIndex);
+    const v=nearestVirtual();
+    setActiveFromVirtual(v);
+    centerVirtual(v);
+    setTimeout(normalizeLoop,180);
   }
   carousel.addEventListener("pointerup",stopDrag);
   carousel.addEventListener("pointercancel",stopDrag);
 
-  // Une roulette verticale sur la galerie devient un défilement horizontal discret.
   carousel.addEventListener("wheel",e=>{
     if(Math.abs(e.deltaY) > Math.abs(e.deltaX)){
       e.preventDefault();
@@ -131,8 +160,12 @@ function renderChooser(){
     }
   },{passive:false});
 
-  requestAnimationFrame(()=>requestAnimationFrame(()=>centerCard(cardIndex,"auto")));
-  window.onresize=()=>centerCard(cardIndex,"auto");
+  const initialVirtual = n + cardIndex;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    centerVirtual(initialVirtual,"auto");
+    setActiveFromVirtual(initialVirtual);
+  }));
+  window.onresize=()=>centerVirtual(n+cardIndex,"auto");
 }
 
 function renderEditor(){
@@ -147,7 +180,7 @@ function renderEditor(){
           <div class="face back">
             <textarea id="message" class="message" rows="4" maxlength="170" placeholder="Écris ton message ici…" aria-label="Message, quatre lignes maximum">${escapeHtml(editorState.message)}</textarea>
             <input id="signature" class="signature" maxlength="30" placeholder="Signature" value="${escapeHtml(editorState.signature)}" aria-label="Signature">
-            <div class="line-count" id="lineCount">0 / 4 lignes</div>
+            <div class="line-count" id="lineCount"></div>
           </div>
         </div>
       </div>
@@ -200,7 +233,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.3"
+      app_version:"sv-1.5"
     })});
     const raw=await res.text();
     let data;
@@ -216,19 +249,25 @@ async function createBillet(message, signature, visualLineCount){
 
 function renderResult(slug){
   const url=`${location.origin}/${slug}`;
+  const physicalUrl = CONFIG.physicalMailUrl || "https://coucouaurelien.com";
   app.innerHTML=`
     ${shell("Ton billet est prêt")}
     <section class="stage"><div class="result">
-      <h1>Il ne reste qu’à le faire voyager.</h1>
-      <p>Partage simplement ce lien à la personne de ton choix.</p>
-      <div class="linkbox"><input id="shareUrl" readonly value="${escapeHtml(url)}"><button id="copy">Copier</button></div>
-      <button class="gold-button" id="share">Partager</button>
+      <h1>Il ne reste plus qu’à le faire voyager.</h1>
+      <div class="result-actions">
+        <button class="gold-button result-button" id="copy">Copier le lien</button>
+        <button class="gold-button result-button" id="share">Partager</button>
+      </div>
+      <a class="physical-cta" href="${escapeHtml(physicalUrl)}" target="_blank" rel="noopener">
+        <span class="physical-title">Envoyer dans un véritable courrier</span>
+        <span class="physical-sub">Écrit à la main et posté à ton crush · 10 €</span>
+      </a>
     </div></section>
     <div class="footer"><button class="text-button" id="another">Créer un autre billet</button></div>`;
   document.querySelector("#copy").onclick=async()=>{ await navigator.clipboard.writeText(url); trackEvent(slug,"share"); showToast("Lien copié"); };
   document.querySelector("#share").onclick=async()=>{
     if(navigator.share){
-      try{ await navigator.share({title:"Un billet pour toi",url}); trackEvent(slug,"share"); }catch(e){}
+      try{ await navigator.share({title:"Billet Doux",url}); trackEvent(slug,"share"); }catch(e){}
     } else {
       await navigator.clipboard.writeText(url); trackEvent(slug,"share"); showToast("Lien copié");
     }
@@ -237,36 +276,37 @@ function renderResult(slug){
 }
 
 async function renderRecipient(slug){
-  app.innerHTML=`${shell("Un billet pour toi")}<section class="stage"><div class="error">Ouverture du billet…</div></section><div class="footer"></div>`;
+  app.innerHTML=`<section class="recipient-stage"><div class="error">Ouverture du billet…</div></section>`;
   try{
     const res=await fetch(`/api/billet?slug=${encodeURIComponent(slug)}`);
     const data=await res.json();
     if(!res.ok || !data.ok) throw new Error("Billet introuvable");
     const card=CARDS.find(c=>c.id===data.card_id) || CARDS[0];
     app.innerHTML=`
-      ${shell("Un billet pour toi")}
-      <section class="stage">
-        <div class="flip-wrap recipient" id="recipientCard">
+      <section class="recipient-stage">
+        <div class="flip-wrap recipient recipient-card" id="recipientCard">
           <div class="flip-card" id="flipCard">
             <div class="face front"><img src="${card.src}" alt=""></div>
             <div class="face back">
-              <div class="message" style="height:auto;overflow:visible;white-space:pre-wrap;pointer-events:none">${escapeHtml(data.message)}</div>
-              <div class="signature" style="pointer-events:none">${escapeHtml(data.signature)}</div>
+              <div class="message recipient-message">${escapeHtml(data.message)}</div>
+              <div class="signature recipient-signature">${escapeHtml(data.signature)}</div>
             </div>
           </div>
         </div>
-        <div class="recipient-note" id="recipientNote">Clique sur la carte</div>
-      </section>
-      <div class="footer"></div>`;
+        <div class="recipient-note" id="recipientNote">Clic sur la carte</div>
+        <a class="recipient-create" id="recipientCreate" href="/">Écrire mon billet</a>
+      </section>`;
     let open=false, revealTracked=false;
     document.querySelector("#recipientCard").onclick=()=>{
-      open=!open; document.querySelector("#flipCard").classList.toggle("is-flipped",open);
-      document.querySelector("#recipientNote").textContent=open?"":"Clique sur la carte";
+      open=!open;
+      document.querySelector("#flipCard").classList.toggle("is-flipped",open);
+      document.querySelector("#recipientNote").textContent=open?"":"Clic sur la carte";
+      document.querySelector("#recipientCreate").classList.toggle("visible",open);
       if(open && !revealTracked){ revealTracked=true; trackEvent(slug,"reveal"); }
     };
     trackEvent(slug,"view");
   }catch(err){
-    app.innerHTML=`${shell("Un billet pour toi")}<section class="stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div></section><div class="footer"></div>`;
+    app.innerHTML=`<section class="recipient-stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div><a class="recipient-create visible" href="/">Écrire mon billet</a></section>`;
   }
 }
 

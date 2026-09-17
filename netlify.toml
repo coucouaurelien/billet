@@ -23,6 +23,13 @@
   to = "/.netlify/functions/health"
   status = 200
 
+# Les fichiers statiques existants gardent priorité (force=false par défaut).
+# Un slug comme /amandine passe par cette fonction pour générer les balises d'aperçu social.
+[[redirects]]
+  from = "/:slug"
+  to = "/.netlify/functions/recipient-page?slug=:slug"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
