@@ -42,7 +42,7 @@ function setup() {
   removeColumnsByHeader_(billets, LEGACY_TRACKING_HEADERS);
 
   SpreadsheetApp.flush();
-  return 'OK — Billet Doux v1.15 relié à : ' + ss.getName();
+  return 'OK — Billet Doux v1.17 relié à : ' + ss.getName();
 }
 
 function getSpreadsheet_() {
@@ -70,7 +70,7 @@ function doGet(e) {
     const action = String(e.parameter.action || '');
 
     if (action === 'ping') {
-      return out_({ok:true, service:'billet-sheet', sheet_ready:true, version:'1.15'});
+      return out_({ok:true, service:'billet-sheet', sheet_ready:true, version:'1.17'});
     }
 
     if (action !== 'get') return out_({ok:false,error:'Bad action'});
@@ -98,6 +98,7 @@ function doPost(e) {
     assertSecret_(body.secret);
 
     if (body.action === 'create') return create_(body);
+    if (body.action === 'archive') return create_(Object.assign({}, body, {slug_override: body.slug}));
 
     // Compatibilité avec une ancienne version du front : on ignore désormais
     // les événements d'ouverture au lieu de toucher au Sheet.
@@ -138,9 +139,16 @@ function create_(body) {
     if (!sheet || !corpus) throw new Error('Sheet non configuré. Relance setup().');
 
     const slugBase = slugify_(signature) || 'billet';
-    const next = nextSlug_(sheet, slugBase);
-    const slug = next.slug;
-    const n = next.number;
+    const forcedSlug = cleanSlug_(body.slug_override || '');
+    let slug, n;
+    if (forcedSlug) {
+      slug = forcedSlug;
+      n = slugNumber_(forcedSlug, slugBase);
+    } else {
+      const next = nextSlug_(sheet, slugBase);
+      slug = next.slug;
+      n = next.number;
+    }
 
     const nowIso = new Date().toISOString();
     const stats = stats_(message);
@@ -403,6 +411,16 @@ function findRowNumBySlug_(sheet, slug, slugCol) {
     .matchEntireCell(true)
     .findNext();
   return finder ? finder.getRow() : 0;
+}
+
+function slugNumber_(slug, slugBase) {
+  if (slug === slugBase) return 1;
+  const prefix = slugBase + '-';
+  if (slug.indexOf(prefix) === 0) {
+    const n = Number(slug.slice(prefix.length));
+    if (Number.isFinite(n) && n >= 2) return Math.round(n);
+  }
+  return 1;
 }
 
 function clampInt_(value, min, max) {

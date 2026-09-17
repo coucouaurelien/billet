@@ -1,8 +1,11 @@
 {
   "name": "coucouaurelien-billet-saint-valentin",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.17.0",
   "scripts": {
     "build": "node scripts/build-cards.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "11.1.0"
   }
 }
