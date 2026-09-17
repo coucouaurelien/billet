@@ -46,3 +46,10 @@ Cette version ne change pas le schéma Google Sheet. Tu peux conserver le Code.g
 - correction du rognage supérieur des glyphes manuscrits
 - écran final simplifié : « Envoyer par message » + « Envoyer dans un véritable courrier »
 - aperçu social : l’initiale est déduite de la signature, avec repli fiable sur le slug du billet
+
+
+## v1.23
+- billet réellement éphémère après dissolution (message supprimé du stockage public)
+- correction clic desktop dans le carrousel
+- retour du balayage d’introduction
+- file Google persistante + Background Function + rattrapage horaire

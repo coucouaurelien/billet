@@ -19,6 +19,15 @@ export default async () => {
     blobError = String(e?.message || e || "Erreur Blobs");
   }
 
+  let pendingGoogle = null;
+  let lastGoogleSync = null;
+  try{
+    const store=getStore("billet-doux");
+    const pending=await store.list({prefix:"archive/"});
+    pendingGoogle=pending.blobs.length;
+    lastGoogleSync=await store.get("system/last-google-sync",{type:"json",consistency:"strong"});
+  }catch(_){ }
+
   let appsScript = false;
   let sheetReady = false;
   let googleError = null;
@@ -47,7 +56,9 @@ export default async () => {
     billet_api_secret:!!secret,
     apps_script:appsScript,
     sheet_ready:sheetReady,
-    google_error:googleError
+    google_error:googleError,
+    google_pending:pendingGoogle,
+    last_google_sync:lastGoogleSync
   });
 };
 

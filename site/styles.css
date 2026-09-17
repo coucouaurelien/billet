@@ -168,7 +168,7 @@ a{color:inherit}
 :root{
   --serif:Garamond,"Apple Garamond","Iowan Old Style",Baskerville,"Times New Roman",serif;
   --ephemere-ink:#9a7759;
-  --ephemere-muted:#82674f;
+  --ephemere-muted:#7f644f;
 }
 
 /* Le titre reste présent sur tous les écrans. */
@@ -207,7 +207,7 @@ a{color:inherit}
 .chooser-stage{justify-content:center;padding-top:0}
 .chooser-copy{display:none}
 .hint{
-  margin-top:24px;
+  margin-top:32px;
   color:var(--ephemere-muted);
   font-family:var(--serif);
   font-size:clamp(20px,2.7vw,28px);
@@ -261,8 +261,9 @@ a{color:inherit}
 }
 .recipient-art-side{background:#000}
 .recipient-art{
-  width:min(470px,76vw);
-  max-height:71svh;
+  width:min(720px,100vw);
+  max-width:100vw;
+  max-height:78svh;
   height:auto;
   display:block;
   object-fit:contain;
@@ -347,7 +348,7 @@ a{color:inherit}
   transform:translate(-50%,calc(-50% + 12px));
   color:var(--ephemere-ink);
   font-family:var(--serif);
-  font-size:clamp(32px,6vw,50px);
+  font-size:clamp(20px,2.7vw,28px);
   font-style:normal;
   font-weight:400;
   line-height:1.22;
@@ -379,20 +380,25 @@ a{color:inherit}
   .brand-action{top:51px;left:14px}
   .brand-action .text-button{font-size:10px}
   .recipient-billet{width:100vw;height:calc(100svh - 172px);min-height:420px}
-  .recipient-art{width:min(76vw,450px);max-height:68svh}
+  .recipient-art{width:100vw;max-width:none;max-height:76svh}
   .recipient-word{width:min(80vw,470px)}
   .recipient-word .recipient-message{font-size:clamp(29px,8.5vw,40px)}
   .recipient-word .recipient-signature{font-size:clamp(27px,7.5vw,36px);margin-top:clamp(68px,10vh,100px)}
   .recipient-instruction{bottom:clamp(16px,3.6vh,38px);font-size:clamp(22px,6vw,29px)}
-  .recipient-experience .recipient-create{font-size:clamp(31px,8vw,39px);width:88vw}
-  .hint{font-size:clamp(21px,5.7vw,27px);margin-top:22px}
+  .recipient-experience .recipient-create{font-size:clamp(21px,5.7vw,27px);width:88vw;color:#7f644f}
+  .hint{font-size:clamp(21px,5.7vw,27px);margin-top:30px;color:#7f644f}
 }
 
 @media(max-height:700px){
   .brand-header{min-height:66px;padding-top:17px}
   .brand-title{font-size:24px}
   .recipient-billet{height:calc(100svh - 108px);min-height:390px}
-  .recipient-art{max-height:62svh;width:min(64vw,410px)}
+  .recipient-art{max-height:72svh;width:100vw;max-width:none}
   .recipient-instruction{font-size:21px;bottom:12px}
   .recipient-word .recipient-signature{margin-top:54px}
 }
+
+/* V1.23 ajustements finaux */
+.hint,.recipient-instruction,.recipient-experience .recipient-create{color:#7f644f}
+.recipient-experience .recipient-create{font-size:clamp(20px,2.7vw,28px)}
+@media(max-width:760px){.recipient-experience .recipient-create{font-size:clamp(21px,5.7vw,27px)}}

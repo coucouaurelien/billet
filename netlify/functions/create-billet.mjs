@@ -50,11 +50,12 @@ export default async (req, context) => {
       } catch (_) {}
     }
 
-    // Google devient une archive secondaire : déclenchée après la réponse utilisateur.
-    // Le background endpoint répond tout de suite en 202 puis Netlify effectue la synchro.
+    // Google est une archive secondaire. On garde une copie persistante dans
+    // archive/<slug> jusqu'à confirmation de la synchro. Ainsi aucune donnée
+    // ne se perd si Google ou une Background Function a un hoquet.
     if (process.env.GOOGLE_SCRIPT_URL && process.env.BILLET_API_SECRET) {
       const archivePayload = {
-        request_id: requestId || `netlify-${billet.slug}-${Date.now()}`,
+        request_id: requestId || `netlify-${billet.slug}`,
         slug: billet.slug,
         card_id: cardId,
         signature,
@@ -63,13 +64,16 @@ export default async (req, context) => {
         reuse_consent_version: String(body.reuse_consent_version || "").slice(0,60),
         composition_seconds: clampInt(body.composition_seconds, 0, 3600),
         visual_line_count: clampInt(body.visual_line_count, 1, 4),
-        app_version: String(body.app_version || "sv-1.18").slice(0,40)
+        app_version: String(body.app_version || "sv-1.23").slice(0,40),
+        created_at: nowIso
       };
-      const syncUrl = new URL("/.netlify/functions/sync-google", context?.site?.url || req.url);
-      // sync-google est une Background Function : l'appel HTTP rend immédiatement 202,
-      // puis Netlify poursuit la copie vers Google séparément. On attend seulement
-      // ce 202 pour être certains que la tâche a réellement été mise en file.
-      await triggerArchive(syncUrl.toString(), archivePayload);
+      try {
+        await store.setJSON(`archive/${billet.slug}`, archivePayload);
+        const syncUrl = new URL("/.netlify/functions/sync-google-background", req.url);
+        await triggerArchive(syncUrl.toString(), {slug:billet.slug});
+      } catch (archiveError) {
+        console.error("Archive queue setup failed", archiveError);
+      }
     }
 
     return json(200, billet);

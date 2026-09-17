@@ -18,19 +18,23 @@ export default async (req) => {
     try {
       const store = getStore(STORE_NAME);
       billet = await store.get(`billets/${slug}`, { type:"json", consistency:"strong" });
-      if (!billet?.slug || billet?.message === undefined) billet = null;
+      if (!billet?.slug) billet = null;
     } catch (err) {
       console.error("recipient-page Blob read failed", err);
     }
   }
 
-  const preloaded = billet ? `<script>window.SV_PRELOADED_BILLET=${safeJson({
-    ok:true,
-    slug:String(billet.slug || slug),
-    card_id:String(billet.card_id || ""),
-    signature:String(billet.signature || ""),
-    message:String(billet.message || "")
-  })};</script>` : "";
+  const preloaded = billet?.consumed === true
+    ? `<script>window.SV_BILLET_GONE=${safeJson({slug,card_id:String(billet.card_id || "")})};</script>`
+    : billet?.message !== undefined
+      ? `<script>window.SV_PRELOADED_BILLET=${safeJson({
+          ok:true,
+          slug:String(billet.slug || slug),
+          card_id:String(billet.card_id || ""),
+          signature:String(billet.signature || ""),
+          message:String(billet.message || "")
+        })};</script>`
+      : "";
 
   const html = `<!doctype html>
 <html lang="fr">
@@ -66,7 +70,7 @@ export default async (req) => {
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/cards.generated.js"></script>
   <script src="/config.js"></script>
-  <script src="/app.js?v=119" defer></script>
+  <script src="/app.js?v=123" defer></script>
 </body>
 </html>`;
 

@@ -11,6 +11,9 @@ export default async (req) => {
   try {
     const store = getStore(STORE_NAME);
     const stored = await store.get(`billets/${slug}`, { type:"json", consistency:"strong" });
+    if (stored?.consumed === true) {
+      return json(410,{ok:false,gone:true,card_id:String(stored.card_id || "")});
+    }
     if (stored?.slug && stored?.message !== undefined) {
       return json(200, { ...stored, ok:true, source:"netlify" });
     }

@@ -23,6 +23,41 @@ function loadingMarkup(){
     <div class="footer"></div>`;
 }
 
+function renderRecipientFinal(cardId=""){
+  const card = cardById(cardId);
+  app.innerHTML = `
+    ${brandHeader()}
+    <section class="recipient-experience is-final">
+      <a class="recipient-create recipient-create-final visible" href="/?card=${encodeURIComponent(card?.id || "")}" aria-hidden="false">
+        <span>Moi aussi,</span>
+        <span>écrire mon billet.</span>
+      </a>
+    </section>
+    <div class="footer"></div>`;
+}
+
+async function consumeBillet(slug, cardId=""){
+  try{
+    localStorage.setItem(`sv:consumed:${slug}`, cardId || "1");
+  }catch(_){ }
+  const payload = JSON.stringify({slug});
+  for(let attempt=0; attempt<2; attempt++){
+    try{
+      const res = await fetch("/api/consume", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:payload,
+        cache:"no-store",
+        keepalive:true
+      });
+      const data = await res.json().catch(()=>({}));
+      if(res.ok && data.ok) return true;
+    }catch(_){ }
+    await new Promise(r=>setTimeout(r,180));
+  }
+  return false;
+}
+
 function renderRecipientView(data, slug){
   const card = cardById(data.card_id);
   app.innerHTML=`
@@ -76,7 +111,9 @@ function renderRecipientView(data, slug){
     step = 3;
     word.classList.add("is-dissolving");
     stage.classList.add("is-final");
-    window.setTimeout(()=>{
+    const consumed = consumeBillet(slug, card.id);
+    window.setTimeout(async()=>{
+      await consumed;
       billet.classList.add("is-gone");
       recipientCreate.classList.add("visible");
       recipientCreate.setAttribute("aria-hidden","false");
@@ -166,6 +203,8 @@ function renderChooser(){
   let startX = 0;
   let startScroll = 0;
   let relooping = false;
+  let pointerCaptured = false;
+  let suppressClickUntil = 0;
 
   function cardCenterScrollLeft(el){
     return el.offsetLeft + el.clientWidth/2 - carousel.clientWidth/2;
@@ -225,6 +264,7 @@ function renderChooser(){
   },{passive:true});
 
   cards.forEach(btn=>btn.addEventListener("click",()=>{
+    if(Date.now() < suppressClickUntil) return;
     const logical = Number(btn.dataset.index);
     const virtual = Number(btn.dataset.virtual);
     if(dragged){ dragged=false; return; }
@@ -240,26 +280,35 @@ function renderChooser(){
 
   carousel.addEventListener("pointerdown",e=>{
     if(e.pointerType === "touch") return;
-    pointerDown=true; dragged=false; startX=e.clientX; startScroll=carousel.scrollLeft;
-    carousel.classList.add("dragging");
-    carousel.setPointerCapture?.(e.pointerId);
+    pointerDown=true; dragged=false; pointerCaptured=false;
+    startX=e.clientX; startScroll=carousel.scrollLeft;
     cancelSwipeDemo();
   });
   carousel.addEventListener("pointermove",e=>{
     if(!pointerDown) return;
     const dx=e.clientX-startX;
-    if(Math.abs(dx)>5) dragged=true;
-    carousel.scrollLeft=startScroll-dx;
+    if(Math.abs(dx)>5){
+      if(!dragged){
+        dragged=true;
+        carousel.classList.add("dragging");
+        try{ carousel.setPointerCapture?.(e.pointerId); pointerCaptured=true; }catch(_){ }
+      }
+      carousel.scrollLeft=startScroll-dx;
+    }
   });
   function stopDrag(e){
     if(!pointerDown) return;
     pointerDown=false;
-    carousel.classList.remove("dragging");
-    try{ carousel.releasePointerCapture?.(e.pointerId); }catch(_){ }
-    const v=nearestVirtual();
-    setActiveFromVirtual(v);
-    centerVirtual(v);
-    setTimeout(normalizeLoop,180);
+    if(dragged){
+      suppressClickUntil = Date.now()+280;
+      carousel.classList.remove("dragging");
+      if(pointerCaptured){ try{ carousel.releasePointerCapture?.(e.pointerId); }catch(_){ } }
+      const v=nearestVirtual();
+      setActiveFromVirtual(v);
+      centerVirtual(v);
+      setTimeout(normalizeLoop,180);
+    }
+    pointerCaptured=false;
   }
   carousel.addEventListener("pointerup",stopDrag);
   carousel.addEventListener("pointercancel",stopDrag);
@@ -303,6 +352,7 @@ function renderChooser(){
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     centerVirtual(initialVirtual,"auto");
     setActiveFromVirtual(initialVirtual);
+    maybePlaySwipeDemo();
   }));
   window.onresize=()=>{
     if(!document.querySelector("#carousel")) return;
@@ -384,7 +434,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.22"
+      app_version:"sv-1.23"
     })});
     const raw=await res.text();
     let data;
@@ -429,15 +479,34 @@ function renderResult(slug){
 }
 
 async function renderRecipient(slug){
+  try{
+    if(window.SV_BILLET_GONE){
+      const gone = window.SV_BILLET_GONE;
+      window.SV_BILLET_GONE = null;
+      renderRecipientFinal(gone.card_id || "");
+      return;
+    }
+    try{
+      const localConsumed = localStorage.getItem(`sv:consumed:${slug}`);
+      if(localConsumed){
+        renderRecipientFinal(localConsumed === "1" ? "" : localConsumed);
+        return;
+      }
+    }catch(_){ }
+  }catch(_){ }
+
   app.innerHTML = loadingMarkup();
   let data = window.SV_PRELOADED_BILLET || null;
   window.SV_PRELOADED_BILLET = null;
 
-  // Fallback uniquement pour les anciens billets / cas exceptionnels.
   if(!data){
     try{
       const res = await fetch(`/api/billet?slug=${encodeURIComponent(slug)}`, { cache:"no-store" });
       const payload = await res.json();
+      if(res.status === 410 || payload?.gone){
+        renderRecipientFinal(payload?.card_id || "");
+        return;
+      }
       if(!res.ok || !payload.ok) throw new Error("Billet introuvable");
       data = payload;
     }catch(err){
