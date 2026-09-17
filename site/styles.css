@@ -128,3 +128,14 @@ a{color:inherit}
   .recipient-card .message{font-size:clamp(22px,7.1vw,34px)}
   .recipient-card .signature{font-size:clamp(23px,6.8vw,34px)}
 }
+
+
+/* Chargement billet */
+.loading-stage{justify-content:center}
+.loading-shell{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;min-height:42svh}
+.loading-mail-wrap{position:relative;width:118px;height:94px;display:flex;align-items:center;justify-content:center;animation:mailFloat 2.1s ease-in-out infinite}
+.loading-mail{width:100px;height:auto;display:block;filter:drop-shadow(0 0 18px rgba(179,146,97,.08))}
+.loading-shadow{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);width:58px;height:8px;border-radius:999px;background:rgba(179,146,97,.18);filter:blur(5px);animation:mailShadow 2.1s ease-in-out infinite}
+.loading-copy{color:#8d8073;font-family:Georgia,"Times New Roman",serif;font-size:13px;font-style:italic;letter-spacing:.02em}
+@keyframes mailFloat{0%{transform:translateX(0) translateY(0)}25%{transform:translateX(-7px) translateY(0)}50%{transform:translateX(-15px) translateY(-4px)}75%{transform:translateX(-8px) translateY(-1px)}100%{transform:translateX(0) translateY(0)}}
+@keyframes mailShadow{0%{opacity:.35;transform:translateX(-50%) scaleX(1)}50%{opacity:.18;transform:translateX(-50%) scaleX(.84)}100%{opacity:.35;transform:translateX(-50%) scaleX(1)}}

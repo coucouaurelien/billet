@@ -1,23 +1,9 @@
 export default async (req) => {
   const url = new URL(req.url);
   const slug = (url.searchParams.get("slug") || "").trim();
-  const endpoint = process.env.GOOGLE_SCRIPT_URL;
-  const secret = process.env.BILLET_API_SECRET;
-  let signature = "";
-
-  if (slug && endpoint && secret) {
-    try {
-      const target = `${endpoint}?action=get&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(secret)}`;
-      const r = await fetch(target, { redirect:"follow" });
-      const data = await r.json();
-      if (data?.ok) signature = String(data.signature || "");
-    } catch (_) {}
-  }
-
-  const letter = initialKey(signature || slug);
   const origin = url.origin;
   const canonical = `${origin}/${encodeURIComponent(slug)}`;
-  const image = `${origin}/assets/og/initial-${letter}.jpg?v=18-${encodeURIComponent(slug)}`;
+  const image = `${origin}/assets/og/mail-preview.jpg?v=19`;
   const html = `<!doctype html>
 <html lang="fr">
 <head>
@@ -57,11 +43,6 @@ export default async (req) => {
   return new Response(html,{status:200,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"}});
 };
 
-function initialKey(value=""){
-  const normalized = String(value).trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
-  const match = normalized.match(/[A-Z]/);
-  return match ? match[0] : "OTHER";
-}
 function escapeAttr(v=""){
   return String(v).replace(/[&"'<>]/g,c=>({"&":"&amp;","\"":"&quot;","'":"&#39;","<":"&lt;",">":"&gt;"}[c]));
 }

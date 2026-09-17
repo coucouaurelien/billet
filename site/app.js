@@ -290,7 +290,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.8"
+      app_version:"sv-1.9"
     })});
     const raw=await res.text();
     let data;
@@ -331,7 +331,16 @@ function renderResult(slug){
 }
 
 async function renderRecipient(slug){
-  app.innerHTML=`<section class="recipient-stage"><div class="error">Ouverture du billet…</div></section>`;
+  app.innerHTML=`
+    <section class="recipient-stage loading-stage">
+      <div class="loading-shell" aria-live="polite">
+        <div class="loading-mail-wrap">
+          <img class="loading-mail" src="/assets/ui/mail-gold.png" alt="">
+          <div class="loading-shadow"></div>
+        </div>
+        <div class="loading-copy">Ouverture du billet…</div>
+      </div>
+    </section>`;
   try{
     const res=await fetch(`/api/billet?slug=${encodeURIComponent(slug)}`);
     const data=await res.json();
