@@ -1,60 +1,60 @@
+import { getStore } from "@netlify/blobs";
+
 export default async () => {
   const endpoint = process.env.GOOGLE_SCRIPT_URL;
   const secret = process.env.BILLET_API_SECRET;
 
-  if (!endpoint || !secret) {
-    return json(500, {
-      ok:false,
-      netlify:true,
-      google_script_url:!!endpoint,
-      billet_api_secret:!!secret,
-      apps_script:false,
-      error:"Variables Netlify incomplètes"
-    });
-  }
-
+  let blobs = false;
+  let blobError = null;
   try {
-    const target = `${endpoint}?action=ping&secret=${encodeURIComponent(secret)}`;
-    const r = await fetch(target, {redirect:"follow"});
-    const raw = await r.text();
-    let data;
-    try { data = JSON.parse(raw); }
-    catch (_) {
-      return json(502, {
-        ok:false,
-        netlify:true,
-        google_script_url:true,
-        billet_api_secret:true,
-        apps_script:false,
-        error:"Apps Script renvoie une page HTML au lieu de JSON. Vérifie l’URL /exec et l’accès 'Tout le monde'."
-      });
-    }
-
-    return json(data.ok ? 200 : 502, {
-      ok:!!data.ok,
-      netlify:true,
-      google_script_url:true,
-      billet_api_secret:true,
-      apps_script:!!data.ok,
-      sheet_ready:!!data.sheet_ready,
-      error:data.ok ? null : humanize(data.error)
-    });
+    const store = getStore("billet-doux");
+    const key = `health/${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const value = { ok:true, stamp:new Date().toISOString() };
+    const write = await store.setJSON(key, value);
+    const read = await store.get(key, { type:"json", consistency:"strong" });
+    blobs = !!write?.etag && read?.ok === true && read?.stamp === value.stamp;
+    await store.delete(key).catch(()=>{});
+    if (!blobs) blobError = "Écriture/relecture Netlify Blobs non vérifiée";
   } catch (e) {
-    return json(502, {
-      ok:false,
-      netlify:true,
-      google_script_url:true,
-      billet_api_secret:true,
-      apps_script:false,
-      error:"Netlify n’arrive pas à joindre Apps Script"
-    });
+    blobError = String(e?.message || e || "Erreur Blobs");
   }
+
+  let appsScript = false;
+  let sheetReady = false;
+  let googleError = null;
+  if (endpoint && secret) {
+    try {
+      const target = `${endpoint}?action=ping&secret=${encodeURIComponent(secret)}`;
+      const r = await fetch(target, {redirect:"follow"});
+      const raw = await r.text();
+      const data = JSON.parse(raw);
+      appsScript = !!data.ok;
+      sheetReady = !!data.sheet_ready;
+      if (!data.ok) googleError = humanize(data.error);
+    } catch (e) {
+      googleError = "Apps Script indisponible ou réponse invalide";
+    }
+  } else {
+    googleError = "Variables Google incomplètes";
+  }
+
+  return json(blobs ? 200 : 502, {
+    ok:blobs,
+    netlify:true,
+    blobs,
+    blobs_error:blobError,
+    google_script_url:!!endpoint,
+    billet_api_secret:!!secret,
+    apps_script:appsScript,
+    sheet_ready:sheetReady,
+    google_error:googleError
+  });
 };
 
 function humanize(message="") {
   const m=String(message);
   if (/Unauthorized/i.test(m)) return "Le secret Netlify et le secret Apps Script ne correspondent pas";
-  if (/setup\(\)|Sheet non configuré|Sheet inaccessible/i.test(m)) return "Le Google Sheet n’est pas initialisé. Exécute setup() dans Apps Script";
+  if (/setup\(\)|Sheet non configuré|Sheet inaccessible/i.test(m)) return "Le Google Sheet n’est pas initialisé";
   return m || "Erreur Apps Script";
 }
 
