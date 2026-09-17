@@ -1,14 +1,14 @@
 const BILLETS_SHEET = 'Billets';
 const CORPUS_SHEET = 'Corpus';
+let SPREADSHEET_CACHE_ = null;
 
+// Colonnes réellement utilisées par l'app.
+// Leur ORDRE N'A PLUS D'IMPORTANCE : le script les retrouve par leur nom.
 const BILLETS_HEADERS = [
   'id','created_at','slug','slug_number','card_id','signature','message',
   'char_count','word_count','manual_line_count','visual_line_count','newline_count','emoji_count',
   'exclamation_count','question_count','ellipsis_count','composition_seconds',
-  'reuse_artistic','reuse_consent_at','reuse_consent_version',
-  'view_count','first_view_at','last_view_at',
-  'reveal_count','first_reveal_at','last_reveal_at','seconds_to_first_reveal',
-  'share_count','last_share_at','app_version'
+  'reuse_artistic','reuse_consent_at','reuse_consent_version','app_version'
 ];
 
 const CORPUS_HEADERS = [
@@ -18,49 +18,67 @@ const CORPUS_HEADERS = [
   'consent_version'
 ];
 
+// Anciennes colonnes de tracking qu'on ne veut plus conserver.
+const LEGACY_TRACKING_HEADERS = [
+  'view_count','first_view_at','last_view_at',
+  'reveal_count','first_reveal_at','last_reveal_at','seconds_to_first_reveal',
+  'share_count','last_share_at'
+];
 
 /**
- * À exécuter UNE FOIS manuellement depuis l'éditeur Apps Script.
- * Cette fonction mémorise l'ID du Google Sheet parent, crée les onglets
- * nécessaires et force la demande d'autorisation Google avant le déploiement.
+ * À exécuter une fois après avoir collé cette nouvelle version.
+ * - relie le bon Sheet
+ * - ajoute les colonnes manquantes sans réordonner les tiennes
+ * - supprime les anciennes colonnes d'ouverture / reveal / share
  */
 function setup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('Ouvre Apps Script depuis le Google Sheet (Extensions > Apps Script), puis relance setup().');
+
   PropertiesService.getScriptProperties().setProperty('BILLET_SPREADSHEET_ID', ss.getId());
-  ensureSheet_(BILLETS_SHEET, BILLETS_HEADERS);
-  ensureSheet_(CORPUS_SHEET, CORPUS_HEADERS);
+
+  const billets = ensureSheetColumns_(BILLETS_SHEET, BILLETS_HEADERS);
+  ensureSheetColumns_(CORPUS_SHEET, CORPUS_HEADERS);
+  removeColumnsByHeader_(billets, LEGACY_TRACKING_HEADERS);
+
   SpreadsheetApp.flush();
-  return 'OK — Sheet relié : ' + ss.getName();
+  return 'OK — Billet Doux v1.11 relié à : ' + ss.getName();
 }
 
 function getSpreadsheet_() {
+  if (SPREADSHEET_CACHE_) return SPREADSHEET_CACHE_;
   const props = PropertiesService.getScriptProperties();
   const savedId = props.getProperty('BILLET_SPREADSHEET_ID');
   if (savedId) {
-    try { return SpreadsheetApp.openById(savedId); }
+    try { SPREADSHEET_CACHE_ = SpreadsheetApp.openById(savedId); return SPREADSHEET_CACHE_; }
     catch (err) { throw new Error('Google Sheet inaccessible. Relance setup() dans Apps Script.'); }
   }
+
   const active = SpreadsheetApp.getActiveSpreadsheet();
   if (active) {
     props.setProperty('BILLET_SPREADSHEET_ID', active.getId());
-    return active;
+    SPREADSHEET_CACHE_ = active;
+    return SPREADSHEET_CACHE_;
   }
+
   throw new Error('Google Sheet non configuré. Exécute setup() une fois dans Apps Script.');
 }
 
 function doGet(e) {
   try {
     assertSecret_(e.parameter.secret);
-    const action = (e.parameter.action || '');
+    const action = String(e.parameter.action || '');
+
     if (action === 'ping') {
-      const ss = getSpreadsheet_();
-      return out_({ok:true,service:'billet-sheet',sheet_ready:!!ss});
+      return out_({ok:true, service:'billet-sheet', sheet_ready:true, version:'1.11'});
     }
+
     if (action !== 'get') return out_({ok:false,error:'Bad action'});
+
     const slug = cleanSlug_(e.parameter.slug || '');
     const row = findBySlug_(slug);
     if (!row) return out_({ok:false,error:'Not found'});
+
     return out_({
       ok:true,
       slug:row.slug,
@@ -69,106 +87,195 @@ function doGet(e) {
       message:row.message,
       created_at:row.created_at
     });
-  } catch (err) { return out_({ok:false,error:String(err.message || err)}); }
+  } catch (err) {
+    return out_({ok:false,error:String(err.message || err)});
+  }
 }
 
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || '{}');
     assertSecret_(body.secret);
+
     if (body.action === 'create') return create_(body);
-    if (body.action === 'event') return event_(body);
+
+    // Compatibilité avec une ancienne version du front : on ignore désormais
+    // les événements d'ouverture au lieu de toucher au Sheet.
+    if (body.action === 'event') return out_({ok:true, ignored:true});
+
     return out_({ok:false,error:'Bad action'});
-  } catch (err) { return out_({ok:false,error:String(err.message || err)}); }
+  } catch (err) {
+    return out_({ok:false,error:String(err.message || err)});
+  }
 }
 
 function create_(body) {
   const message = String(body.message || '').trim().slice(0,170);
   const signature = String(body.signature || '').trim().slice(0,30);
   const cardId = String(body.card_id || '').trim().slice(0,80);
+
   if (!message) throw new Error('Message required');
   if (!signature) throw new Error('Signature required');
   if (!cardId) throw new Error('Card required');
 
+  // Très court verrou uniquement pour garantir un slug unique en cas de deux
+  // créations simultanées. On ne bloque plus jusqu'à 10 secondes.
   const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
+  if (!lock.tryLock(2500)) throw new Error('Busy — retry');
+
   try {
-    const sheet = ensureSheet_(BILLETS_SHEET, BILLETS_HEADERS);
-    ensureSheet_(CORPUS_SHEET, CORPUS_HEADERS);
+    const sheet = ensureSheetColumns_(BILLETS_SHEET, BILLETS_HEADERS);
+    const corpus = ensureSheetColumns_(CORPUS_SHEET, CORPUS_HEADERS);
 
     const slugBase = slugify_(signature) || 'billet';
-    const used = slugSet_(sheet);
-    let n = 1;
-    let slug = slugBase;
-    while (used.has(slug)) { n++; slug = slugBase + '-' + n; }
+    const next = nextSlug_(sheet, slugBase);
+    const slug = next.slug;
+    const n = next.number;
 
-    const now = new Date();
-    const nowIso = now.toISOString();
+    const nowIso = new Date().toISOString();
     const stats = stats_(message);
     const compositionSeconds = clampInt_(body.composition_seconds, 0, 3600);
     const visualLineCount = clampInt_(body.visual_line_count, 1, 4);
     const reuse = body.reuse_artistic === true;
-    const consentVersion = String(body.reuse_consent_version || '').slice(0,40);
+    const consentVersion = String(body.reuse_consent_version || '').slice(0,60);
 
-    const values = [
-      Utilities.getUuid(), nowIso, slug, n, cardId, signature, message,
-      stats.charCount, stats.wordCount, stats.lineCount, visualLineCount, stats.newlineCount, stats.emojiCount,
-      stats.exclamationCount, stats.questionCount, stats.ellipsisCount, compositionSeconds,
-      reuse, reuse ? nowIso : '', reuse ? consentVersion : '',
-      0, '', '',
-      0, '', '', '',
-      0, '', String(body.app_version || '').slice(0,40)
-    ];
-    sheet.appendRow(values);
+    const billet = {
+      id: Utilities.getUuid(),
+      created_at: nowIso,
+      slug,
+      slug_number: n,
+      card_id: cardId,
+      signature,
+      message,
+      char_count: stats.charCount,
+      word_count: stats.wordCount,
+      manual_line_count: stats.lineCount,
+      visual_line_count: visualLineCount,
+      newline_count: stats.newlineCount,
+      emoji_count: stats.emojiCount,
+      exclamation_count: stats.exclamationCount,
+      question_count: stats.questionCount,
+      ellipsis_count: stats.ellipsisCount,
+      composition_seconds: compositionSeconds,
+      reuse_artistic: reuse,
+      reuse_consent_at: reuse ? nowIso : '',
+      reuse_consent_version: reuse ? consentVersion : '',
+      app_version: String(body.app_version || '').slice(0,40)
+    };
+
+    // Une seule écriture de ligne, mappée par le NOM de colonne.
+    appendObject_(sheet, billet);
 
     if (reuse) {
-      const corpus = ensureSheet_(CORPUS_SHEET, CORPUS_HEADERS);
-      corpus.appendRow([
-        Utilities.getUuid(), nowIso, cardId, message,
-        stats.charCount, stats.wordCount, stats.lineCount, visualLineCount, stats.newlineCount, stats.emojiCount,
-        stats.exclamationCount, stats.questionCount, stats.ellipsisCount, compositionSeconds,
-        consentVersion
-      ]);
+      appendObject_(corpus, {
+        corpus_id: Utilities.getUuid(),
+        created_at: nowIso,
+        card_id: cardId,
+        message,
+        char_count: stats.charCount,
+        word_count: stats.wordCount,
+        manual_line_count: stats.lineCount,
+        visual_line_count: visualLineCount,
+        newline_count: stats.newlineCount,
+        emoji_count: stats.emojiCount,
+        exclamation_count: stats.exclamationCount,
+        question_count: stats.questionCount,
+        ellipsis_count: stats.ellipsisCount,
+        composition_seconds: compositionSeconds,
+        consent_version: consentVersion
+      });
     }
+
+    // Les billets sont immuables : pendant les premières heures, les ouvertures
+    // peuvent être servies directement depuis le cache Apps Script.
+    try {
+      CacheService.getScriptCache().put('billet:' + slug, JSON.stringify({
+        slug,
+        card_id: cardId,
+        signature,
+        message,
+        created_at: nowIso
+      }), 21600);
+    } catch (_) {}
 
     return out_({ok:true,slug});
-  } finally { lock.releaseLock(); }
+  } finally {
+    lock.releaseLock();
+  }
 }
 
-function event_(body) {
-  const slug = cleanSlug_(body.slug || '');
-  const type = String(body.type || '');
-  if (!['view','reveal','share'].includes(type)) throw new Error('Bad event');
-  const sheet = ensureSheet_(BILLETS_SHEET, BILLETS_HEADERS);
+function nextSlug_(sheet, slugBase) {
+  const props = PropertiesService.getScriptProperties();
+  const key = 'SLUG_NEXT__' + slugBase;
+  let n = Number(props.getProperty(key) || 0);
+
+  // Première utilisation de ce prénom : on synchronise une fois avec les billets
+  // existants. Ensuite on ne rescannera plus toute la colonne à chaque création.
+  if (!Number.isFinite(n) || n < 1) {
+    n = inferNextSlugNumber_(sheet, slugBase);
+  }
+
+  let slug = n === 1 ? slugBase : slugBase + '-' + n;
+
+  // Garde-fou si le compteur a été effacé / désynchronisé.
+  while (findRowNumBySlug_(sheet, slug, headerMap_(sheet).slug)) {
+    n += 1;
+    slug = slugBase + '-' + n;
+  }
+
+  props.setProperty(key, String(n + 1));
+  return {slug, number:n};
+}
+
+function inferNextSlugNumber_(sheet, slugBase) {
+  const map = headerMap_(sheet);
+  const slugCol = map.slug;
+  const lastRow = sheet.getLastRow();
+  if (!slugCol || lastRow < 2) return 1;
+
+  const values = sheet.getRange(2, slugCol, lastRow - 1, 1).getDisplayValues().flat();
+  let max = 0;
+  const escaped = escapeRegExp_(slugBase);
+  const rx = new RegExp('^' + escaped + '(?:-(\\d+))?$');
+
+  values.forEach(value => {
+    const m = String(value || '').match(rx);
+    if (!m) return;
+    const num = m[1] ? Number(m[1]) : 1;
+    if (Number.isFinite(num)) max = Math.max(max, num);
+  });
+
+  return max + 1;
+}
+
+function findBySlug_(slug) {
+  if (!slug) return null;
+
+  try {
+    const cached = CacheService.getScriptCache().get('billet:' + slug);
+    if (cached) return JSON.parse(cached);
+  } catch (_) {}
+
+  const sheet = ensureSheetColumns_(BILLETS_SHEET, BILLETS_HEADERS);
   const map = headerMap_(sheet);
   const rowNum = findRowNumBySlug_(sheet, slug, map.slug);
-  if (!rowNum) return out_({ok:false,error:'Not found'});
-  const now = new Date();
-  const nowIso = now.toISOString();
+  if (!rowNum) return null;
 
-  if (type === 'view') {
-    increment_(sheet, rowNum, map.view_count);
-    if (!sheet.getRange(rowNum, map.first_view_at).getValue()) sheet.getRange(rowNum, map.first_view_at).setValue(nowIso);
-    sheet.getRange(rowNum, map.last_view_at).setValue(nowIso);
-  }
+  const row = sheet.getRange(rowNum, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const obj = {};
+  Object.keys(map).forEach(key => obj[key] = row[map[key] - 1]);
 
-  if (type === 'reveal') {
-    increment_(sheet, rowNum, map.reveal_count);
-    const firstCell = sheet.getRange(rowNum, map.first_reveal_at);
-    if (!firstCell.getValue()) {
-      firstCell.setValue(nowIso);
-      const created = sheet.getRange(rowNum, map.created_at).getValue();
-      const createdMs = new Date(created).getTime();
-      if (Number.isFinite(createdMs)) sheet.getRange(rowNum, map.seconds_to_first_reveal).setValue(Math.max(0, Math.round((now.getTime() - createdMs) / 1000)));
-    }
-    sheet.getRange(rowNum, map.last_reveal_at).setValue(nowIso);
-  }
+  try {
+    CacheService.getScriptCache().put('billet:' + slug, JSON.stringify({
+      slug: obj.slug,
+      card_id: obj.card_id,
+      signature: obj.signature,
+      message: obj.message,
+      created_at: obj.created_at
+    }), 21600);
+  } catch (_) {}
 
-  if (type === 'share') {
-    increment_(sheet, rowNum, map.share_count);
-    sheet.getRange(rowNum, map.last_share_at).setValue(nowIso);
-  }
-  return out_({ok:true});
+  return obj;
 }
 
 function stats_(message) {
@@ -186,55 +293,99 @@ function stats_(message) {
   };
 }
 
-function ensureSheet_(name, headers) {
+/**
+ * Ajoute uniquement les colonnes manquantes à droite.
+ * Ne réordonne jamais les colonnes existantes.
+ */
+function ensureSheetColumns_(name, requiredHeaders) {
   const ss = getSpreadsheet_();
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
-  if (sheet.getLastRow() === 0) sheet.appendRow(headers);
-  const current = sheet.getRange(1,1,1,headers.length).getValues()[0];
-  if (current.join('|') !== headers.join('|')) sheet.getRange(1,1,1,headers.length).setValues([headers]);
+
+  if (sheet.getLastRow() === 0 || sheet.getLastColumn() === 0) {
+    sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
+    return sheet;
+  }
+
+  const existing = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0].map(String);
+  const missing = requiredHeaders.filter(header => !existing.includes(header));
+  if (missing.length) {
+    const start = sheet.getLastColumn() + 1;
+    sheet.getRange(1, start, 1, missing.length).setValues([missing]);
+  }
+
   return sheet;
 }
 
+function appendObject_(sheet, obj) {
+  const map = headerMap_(sheet);
+  const width = sheet.getLastColumn();
+  const row = new Array(width).fill('');
+
+  Object.keys(obj).forEach(key => {
+    const col = map[key];
+    if (col) row[col - 1] = obj[key];
+  });
+
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, width).setValues([row]);
+}
+
+function removeColumnsByHeader_(sheet, headers) {
+  if (!sheet || sheet.getLastColumn() < 1) return;
+  const current = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0].map(String);
+  const positions = [];
+  current.forEach((header, index) => {
+    if (headers.includes(header)) positions.push(index + 1);
+  });
+
+  // Suppression de droite à gauche pour ne pas décaler les index restants.
+  positions.sort((a,b) => b-a).forEach(col => sheet.deleteColumn(col));
+}
+
 function headerMap_(sheet) {
-  const heads = sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0];
-  const map = {}; heads.forEach((h,i)=>map[h]=i+1); return map;
+  const heads = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+  const map = {};
+  heads.forEach((head, i) => {
+    const key = String(head || '').trim();
+    if (key && !map[key]) map[key] = i + 1;
+  });
+  return map;
 }
-function slugSet_(sheet) {
-  if (sheet.getLastRow() < 2) return new Set();
-  const map = headerMap_(sheet);
-  const vals = sheet.getRange(2,map.slug,sheet.getLastRow()-1,1).getValues().flat();
-  return new Set(vals.map(String));
-}
-function findBySlug_(slug) {
-  const sheet = ensureSheet_(BILLETS_SHEET, BILLETS_HEADERS);
-  const map = headerMap_(sheet);
-  const rowNum = findRowNumBySlug_(sheet, slug, map.slug);
-  if (!rowNum) return null;
-  const row = sheet.getRange(rowNum,1,1,sheet.getLastColumn()).getValues()[0];
-  const obj = {}; Object.keys(map).forEach(k=>obj[k]=row[map[k]-1]); return obj;
-}
+
 function findRowNumBySlug_(sheet, slug, slugCol) {
-  if (!slug || sheet.getLastRow() < 2) return 0;
-  const finder = sheet.getRange(2,slugCol,sheet.getLastRow()-1,1).createTextFinder(slug).matchEntireCell(true).findNext();
+  if (!slug || !slugCol || sheet.getLastRow() < 2) return 0;
+  const finder = sheet
+    .getRange(2, slugCol, sheet.getLastRow() - 1, 1)
+    .createTextFinder(slug)
+    .matchEntireCell(true)
+    .findNext();
   return finder ? finder.getRow() : 0;
 }
-function increment_(sheet, rowNum, colNum) {
-  const cell = sheet.getRange(rowNum, colNum);
-  cell.setValue(Number(cell.getValue() || 0) + 1);
-}
+
 function clampInt_(value, min, max) {
   const n = Math.round(Number(value) || 0);
   return Math.max(min, Math.min(max, n));
 }
+
 function slugify_(s) {
   return String(s || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,50);
 }
-function cleanSlug_(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,60); }
+
+function cleanSlug_(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,60);
+}
+
+function escapeRegExp_(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function assertSecret_(received) {
   const expected = PropertiesService.getScriptProperties().getProperty('BILLET_API_SECRET');
   if (!expected || received !== expected) throw new Error('Unauthorized');
 }
-function out_(obj){ return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
+
+function out_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}

@@ -44,21 +44,25 @@ export default async (req) => {
   <script src="/app.js" defer></script>
 </body>
 </html>`;
-  return new Response(html,{status:200,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"}});
+  return new Response(html,{status:200,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"public, max-age=60, s-maxage=86400, stale-while-revalidate=604800"}});
 };
 
 async function fetchBillet(slug){
   const endpoint = process.env.GOOGLE_SCRIPT_URL;
   const secret = process.env.BILLET_API_SECRET;
   if(!endpoint || !secret || !slug) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4500);
   try{
     const target = `${endpoint}?action=get&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(secret)}`;
-    const res = await fetch(target,{redirect:"follow"});
+    const res = await fetch(target,{redirect:"follow",signal:controller.signal});
     const data = await res.json();
     if(!res.ok || !data?.ok) return null;
     return data;
   }catch(_){
     return null;
+  }finally{
+    clearTimeout(timer);
   }
 }
 

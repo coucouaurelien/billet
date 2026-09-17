@@ -6,13 +6,17 @@ export default async (req) => {
   if (!endpoint) return json(500, { ok:false, error:"GOOGLE_SCRIPT_URL manque dans Netlify" });
   if (!secret) return json(500, { ok:false, error:"BILLET_API_SECRET manque dans Netlify" });
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7000);
+
   try {
     const body = await req.json();
     const r = await fetch(endpoint, {
       method:"POST",
       headers:{"Content-Type":"text/plain;charset=utf-8"},
       body:JSON.stringify({ ...body, action:"create", secret }),
-      redirect:"follow"
+      redirect:"follow",
+      signal:controller.signal
     });
 
     const raw = await r.text();
@@ -23,7 +27,7 @@ export default async (req) => {
       console.error("Apps Script returned non JSON", r.status, raw.slice(0,500));
       return json(502, {
         ok:false,
-        error:"Apps Script ne répond pas correctement. Vérifie l’URL /exec et le déploiement 'Tout le monde'."
+        error:"Google a mis trop de temps à enregistrer le billet. Réessaie une fois."
       });
     }
 
@@ -35,7 +39,12 @@ export default async (req) => {
     return json(200, data);
   } catch (e) {
     console.error("create-billet exception:", e);
-    return json(500, { ok:false, error:"Erreur serveur Netlify lors de la création" });
+    if (e?.name === "AbortError") {
+      return json(504, { ok:false, error:"Google met trop de temps à répondre. Réessaie une fois." });
+    }
+    return json(500, { ok:false, error:"Erreur serveur lors de la création du billet" });
+  } finally {
+    clearTimeout(timeout);
   }
 };
 
@@ -43,6 +52,7 @@ function humanize(message="") {
   const m = String(message);
   if (/Unauthorized/i.test(m)) return "Le secret Netlify et le secret Apps Script ne correspondent pas";
   if (/setup\(\)|Sheet non configuré|Sheet inaccessible/i.test(m)) return "Le Google Sheet n’est pas initialisé. Exécute setup() une fois dans Apps Script";
+  if (/Busy/i.test(m)) return "Deux billets sont créés en même temps. Réessaie immédiatement.";
   if (/Message required/i.test(m)) return "Le message est vide";
   if (/Signature required/i.test(m)) return "La signature est vide";
   if (/Card required/i.test(m)) return "L’illustration n’a pas été reconnue";

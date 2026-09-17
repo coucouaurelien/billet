@@ -328,11 +328,14 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.10"
+      app_version:"sv-1.11"
     })});
     const raw=await res.text();
     let data;
-    try{ data=JSON.parse(raw); }catch(_){ throw new Error(raw || `HTTP ${res.status}`); }
+    try{ data=JSON.parse(raw); }catch(_){
+      console.error("create endpoint returned non JSON", raw.slice(0,300));
+      throw new Error("Le serveur a mis trop de temps. Réessaie une fois.");
+    }
     if(!res.ok || !data.ok) throw new Error(data.error||"Création impossible");
     renderResult(data.slug);
   }catch(err){
