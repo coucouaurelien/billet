@@ -66,7 +66,10 @@ export default async (req, context) => {
         app_version: String(body.app_version || "sv-1.18").slice(0,40)
       };
       const syncUrl = new URL("/.netlify/functions/sync-google", context?.site?.url || req.url);
-      context?.waitUntil?.(triggerArchive(syncUrl.toString(), archivePayload));
+      // sync-google est une Background Function : l'appel HTTP rend immédiatement 202,
+      // puis Netlify poursuit la copie vers Google séparément. On attend seulement
+      // ce 202 pour être certains que la tâche a réellement été mise en file.
+      await triggerArchive(syncUrl.toString(), archivePayload);
     }
 
     return json(200, billet);

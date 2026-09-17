@@ -87,9 +87,12 @@ a{color:inherit}
 .recipient-card .signature{left:21%;right:21%}
 .recipient-message{height:auto;overflow:visible;white-space:pre-wrap;pointer-events:none}
 .recipient-signature{pointer-events:none}
-.recipient-note{text-align:center;color:#6c6258;font-family:Georgia,"Times New Roman",serif;font-size:11.5px;font-style:italic;margin-top:14px;min-height:18px}
-.recipient-create{margin-top:14px;color:#7e7165;text-decoration:none;font-family:Georgia,"Times New Roman",serif;font-size:12px;font-style:italic;opacity:0;pointer-events:none;transform:translateY(5px);transition:opacity .35s ease,transform .35s ease}
+.recipient-card{transition:opacity .52s ease,transform .52s cubic-bezier(.2,.72,.2,1),filter .52s ease}
+.recipient-card.is-leaving{opacity:0;transform:scale(.965) translateY(-8px);filter:blur(1px);pointer-events:none}
+.recipient-stage.is-final{justify-content:center!important;padding-top:0!important;padding-bottom:0!important}
+.recipient-create{color:#b49a7b;text-decoration:none;font-family:Georgia,"Times New Roman",serif;font-size:clamp(27px,5vw,44px);font-style:italic;font-weight:400;line-height:1.15;text-align:center;opacity:0;pointer-events:none;transform:translateY(10px);transition:opacity .55s ease,transform .55s cubic-bezier(.2,.72,.2,1);display:flex;flex-direction:column;align-items:center;justify-content:center;letter-spacing:-.015em}
 .recipient-create.visible{opacity:1;pointer-events:auto;transform:none}
+.recipient-create:focus-visible{outline:1px solid rgba(179,146,97,.48);outline-offset:12px;border-radius:4px}
 .error{width:min(520px,88vw);margin:auto;text-align:center;color:#8a7e72;font-family:Georgia,"Times New Roman",serif;font-style:italic;line-height:1.6}
 .toast{position:fixed;left:50%;bottom:max(28px,env(safe-area-inset-bottom));transform:translate(-50%,15px);background:#0d0c0b;border:1px solid #29231d;color:#bda98f;padding:10px 14px;border-radius:12px;font-family:Georgia,"Times New Roman",serif;font-size:12px;font-style:italic;opacity:0;pointer-events:none;transition:.25s ease;z-index:20;white-space:nowrap}.toast.show{opacity:1;transform:translate(-50%,0)}
 
@@ -99,7 +102,6 @@ a{color:inherit}
   .chooser-copy{margin-bottom:8px;padding:0 10px}
   .recipient-stage{justify-content:flex-start;padding-top:0}
   .recipient-card .flip-card{width:100vw}
-  .recipient-note{margin-top:11px}
   .recipient-card .message{left:14.5%;right:14.5%}
   .recipient-card .signature{left:22%;right:22%}
 }
@@ -157,3 +159,240 @@ a{color:inherit}
 .loading-shell{min-height:38svh;display:flex;align-items:center;justify-content:center}
 .loading-copy{color:#8d8073;font-family:Georgia,"Times New Roman",serif;font-size:13px;font-style:italic;letter-spacing:.02em}
 .loading-art,.loading-mail-wrap,.loading-mail,.loading-shadow,.loading-veil{display:none!important;animation:none!important}
+
+
+/* =========================================================
+   V1.22 — Les billets Éphémères
+   La réception devient l'expérience principale.
+   ========================================================= */
+:root{
+  --serif:Garamond,"Apple Garamond","Iowan Old Style",Baskerville,"Times New Roman",serif;
+  --ephemere-ink:#9a7759;
+  --ephemere-muted:#82674f;
+}
+
+/* Le titre reste présent sur tous les écrans. */
+.brand-header{
+  position:relative;
+  width:100%;
+  min-height:92px;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding:28px 18px 10px;
+  z-index:5;
+}
+.brand-title{
+  color:var(--ephemere-ink);
+  font-family:var(--serif);
+  font-size:clamp(25px,3.4vw,36px);
+  line-height:1;
+  font-weight:400;
+  font-style:italic;
+  letter-spacing:-.015em;
+  text-align:center;
+}
+.brand-action{
+  position:absolute;
+  left:max(18px,env(safe-area-inset-left));
+  top:30px;
+}
+.brand-action .text-button{
+  font-family:var(--serif);
+  color:#76614e;
+}
+.screen-kicker{display:none}
+
+/* La galerie devient volontairement discrète : le dessin fait l'essentiel. */
+.chooser-stage{justify-content:center;padding-top:0}
+.chooser-copy{display:none}
+.hint{
+  margin-top:24px;
+  color:var(--ephemere-muted);
+  font-family:var(--serif);
+  font-size:clamp(20px,2.7vw,28px);
+  font-style:normal;
+  letter-spacing:-.01em;
+  line-height:1.2;
+}
+
+/* Réception : 3 actes — dessin / mot / invitation. */
+.recipient-experience{
+  position:relative;
+  width:100%;
+  min-height:0;
+  height:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  perspective:1800px;
+}
+.recipient-billet{
+  position:relative;
+  width:min(620px,92vw);
+  height:min(760px,calc(100svh - 185px));
+  min-height:460px;
+  border:0;
+  padding:0;
+  margin:0;
+  background:transparent;
+  color:inherit;
+  cursor:pointer;
+  perspective:1800px;
+  transition:opacity .62s ease,filter .62s ease,transform .62s cubic-bezier(.2,.72,.2,1);
+}
+.recipient-billet-inner{
+  position:absolute;
+  inset:0;
+  transform-style:preserve-3d;
+  transition:transform 1.08s cubic-bezier(.18,.7,.24,1);
+}
+.recipient-billet-inner.is-flipped{transform:rotateY(180deg)}
+.recipient-side{
+  position:absolute;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+}
+.recipient-art-side{background:#000}
+.recipient-art{
+  width:min(470px,76vw);
+  max-height:71svh;
+  height:auto;
+  display:block;
+  object-fit:contain;
+  user-select:none;
+  -webkit-user-drag:none;
+}
+.recipient-word-side{
+  transform:rotateY(180deg);
+  background:#050505;
+}
+.recipient-word{
+  width:min(520px,82vw);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  color:var(--ink);
+  transform:translateZ(1px);
+  transition:opacity .72s ease,filter .72s ease,transform .72s cubic-bezier(.2,.72,.2,1),letter-spacing .72s ease;
+}
+.recipient-word .recipient-message{
+  position:static;
+  width:100%;
+  margin:0;
+  padding:0;
+  color:var(--ink);
+  font-family:"Coucouaurelien","Bradley Hand","Segoe Print","Marker Felt",cursive;
+  font-size:clamp(29px,5.5vw,48px);
+  line-height:1.12;
+  letter-spacing:-.025em;
+  white-space:pre-wrap;
+}
+.recipient-word .recipient-signature{
+  position:static;
+  width:100%;
+  margin:clamp(74px,10vh,115px) 0 0;
+  padding:0;
+  color:var(--ink);
+  font-family:"Coucouaurelien","Bradley Hand","Segoe Print","Marker Felt",cursive;
+  font-size:clamp(27px,4.8vw,42px);
+  line-height:1.1;
+}
+.recipient-word.is-dissolving{
+  opacity:0;
+  filter:blur(12px);
+  transform:scale(1.035);
+  letter-spacing:.055em;
+  pointer-events:none;
+}
+.recipient-billet.is-gone{
+  opacity:0;
+  filter:blur(7px);
+  transform:scale(.985);
+  pointer-events:none;
+}
+.recipient-instruction{
+  position:absolute;
+  left:20px;
+  right:20px;
+  bottom:clamp(18px,4.5vh,52px);
+  text-align:center;
+  color:var(--ephemere-muted);
+  font-family:var(--serif);
+  font-size:clamp(22px,3vw,31px);
+  font-weight:400;
+  line-height:1.15;
+  opacity:1;
+  transform:none;
+  transition:opacity .35s ease,transform .35s ease;
+  pointer-events:none;
+}
+.recipient-instruction.is-hidden{
+  opacity:0;
+  transform:translateY(5px);
+}
+.recipient-experience .recipient-create{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:min(560px,88vw);
+  transform:translate(-50%,calc(-50% + 12px));
+  color:var(--ephemere-ink);
+  font-family:var(--serif);
+  font-size:clamp(32px,6vw,50px);
+  font-style:normal;
+  font-weight:400;
+  line-height:1.22;
+  letter-spacing:-.018em;
+  opacity:0;
+  pointer-events:none;
+  text-align:center;
+  text-decoration:none;
+  transition:opacity .62s ease,transform .62s cubic-bezier(.2,.72,.2,1);
+}
+.recipient-experience .recipient-create.visible{
+  opacity:1;
+  pointer-events:auto;
+  transform:translate(-50%,-50%);
+}
+.recipient-experience .recipient-create span{display:block}
+.recipient-experience.is-final .recipient-instruction{display:none}
+
+/* Les écrans fonctionnels conservent la même voix typographique. */
+.text-button,.gold-button,.result h1,.physical-sub,.error,.loading-copy,.toast{
+  font-family:var(--serif);
+}
+.result h1{font-style:normal}
+
+@media(max-width:760px){
+  .app{grid-template-rows:auto minmax(0,1fr) auto;padding-top:max(8px,env(safe-area-inset-top))}
+  .brand-header{min-height:112px;padding-top:52px;padding-bottom:10px}
+  .brand-title{font-size:clamp(25px,7vw,31px)}
+  .brand-action{top:51px;left:14px}
+  .brand-action .text-button{font-size:10px}
+  .recipient-billet{width:100vw;height:calc(100svh - 172px);min-height:420px}
+  .recipient-art{width:min(76vw,450px);max-height:68svh}
+  .recipient-word{width:min(80vw,470px)}
+  .recipient-word .recipient-message{font-size:clamp(29px,8.5vw,40px)}
+  .recipient-word .recipient-signature{font-size:clamp(27px,7.5vw,36px);margin-top:clamp(68px,10vh,100px)}
+  .recipient-instruction{bottom:clamp(16px,3.6vh,38px);font-size:clamp(22px,6vw,29px)}
+  .recipient-experience .recipient-create{font-size:clamp(31px,8vw,39px);width:88vw}
+  .hint{font-size:clamp(21px,5.7vw,27px);margin-top:22px}
+}
+
+@media(max-height:700px){
+  .brand-header{min-height:66px;padding-top:17px}
+  .brand-title{font-size:24px}
+  .recipient-billet{height:calc(100svh - 108px);min-height:390px}
+  .recipient-art{max-height:62svh;width:min(64vw,410px)}
+  .recipient-instruction{font-size:21px;bottom:12px}
+  .recipient-word .recipient-signature{margin-top:54px}
+}

@@ -14,36 +14,81 @@ const cardById = (id) => CARDS.find(card => card.id === id) || CARDS[0];
 
 function loadingMarkup(){
   return `
+    ${brandHeader()}
     <section class="recipient-stage loading-stage">
       <div class="loading-shell" aria-live="polite">
         <div class="loading-copy">Ouverture du billet…</div>
       </div>
-    </section>`;
+    </section>
+    <div class="footer"></div>`;
 }
 
 function renderRecipientView(data, slug){
   const card = cardById(data.card_id);
   app.innerHTML=`
-    <section class="recipient-stage">
-      <div class="flip-wrap recipient recipient-card" id="recipientCard">
-        <div class="flip-card" id="flipCard">
-          <div class="face front"><img src="${card.src}" alt=""></div>
-          <div class="face back">
-            <div class="message recipient-message">${escapeHtml(data.message)}</div>
-            <div class="signature recipient-signature">${escapeHtml(data.signature)}</div>
+    ${brandHeader()}
+    <section class="recipient-experience" id="recipientStage">
+      <button class="recipient-billet" id="recipientBillet" type="button" aria-label="Retourner le billet">
+        <div class="recipient-billet-inner" id="recipientBilletInner">
+          <div class="recipient-side recipient-art-side">
+            <img src="${card.src}" alt="" class="recipient-art">
+          </div>
+          <div class="recipient-side recipient-word-side">
+            <div class="recipient-word" id="recipientWord">
+              <div class="recipient-message">${escapeHtml(data.message)}</div>
+              <div class="recipient-signature">${escapeHtml(data.signature)}</div>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="recipient-note" id="recipientNote">Clic sur la carte</div>
-      <a class="recipient-create" id="recipientCreate" href="/">Moi aussi, écrire mon billet</a>
-    </section>`;
-  let open=false;
-  document.querySelector("#recipientCard").onclick=()=>{
-    open=!open;
-    document.querySelector("#flipCard").classList.toggle("is-flipped",open);
-    document.querySelector("#recipientNote").textContent=open?"":"Clic sur la carte";
-    document.querySelector("#recipientCreate").classList.toggle("visible",open);
+      </button>
+
+      <div class="recipient-instruction" id="recipientInstruction">Clic pour retourner le billet.</div>
+
+      <a class="recipient-create recipient-create-final" id="recipientCreate" href="/?card=${encodeURIComponent(card.id)}" aria-hidden="true">
+        <span>Moi aussi,</span>
+        <span>écrire mon billet.</span>
+      </a>
+    </section>
+    <div class="footer"></div>`;
+
+  const stage = document.querySelector("#recipientStage");
+  const billet = document.querySelector("#recipientBillet");
+  const inner = document.querySelector("#recipientBilletInner");
+  const word = document.querySelector("#recipientWord");
+  const instruction = document.querySelector("#recipientInstruction");
+  const recipientCreate = document.querySelector("#recipientCreate");
+  let step = 1;
+  let locked = false;
+
+  const showMessage = ()=>{
+    if(locked || step !== 1) return;
+    locked = true;
+    step = 2;
+    instruction.classList.add("is-hidden");
+    inner.classList.add("is-flipped");
+    billet.setAttribute("aria-label","Faire disparaître le message");
+    window.setTimeout(()=>{ locked = false; }, 900);
   };
+
+  const dissolveMessage = ()=>{
+    if(locked || step !== 2) return;
+    locked = true;
+    step = 3;
+    word.classList.add("is-dissolving");
+    stage.classList.add("is-final");
+    window.setTimeout(()=>{
+      billet.classList.add("is-gone");
+      recipientCreate.classList.add("visible");
+      recipientCreate.setAttribute("aria-hidden","false");
+      recipientCreate.focus({preventScroll:true});
+      locked = false;
+    }, 760);
+  };
+
+  billet.addEventListener("click", event=>{
+    if(step === 1) showMessage();
+    else if(step === 2 && event.target.closest("#recipientWord")) dissolveMessage();
+  });
 }
 
 const fontReady = (() => {
@@ -76,19 +121,31 @@ function route(){
   }
   const slug = decodeURIComponent(location.pathname.replace(/^\/+|\/+$/g, ""));
   if(slug) renderRecipient(slug);
-  else renderChooser();
+  else {
+    const requestedCard = new URLSearchParams(location.search).get("card");
+    const requestedIndex = requestedCard ? CARDS.findIndex(card => card.id === requestedCard) : -1;
+    if(requestedIndex >= 0) cardIndex = requestedIndex;
+    renderChooser();
+  }
+}
+
+function brandHeader(actionHtml=""){
+  return `<header class="brand-header">
+    ${actionHtml ? `<div class="brand-action">${actionHtml}</div>` : ""}
+    <div class="brand-title">Les billets Éphémères</div>
+  </header>`;
 }
 
 function shell(eyebrow="", right=""){
-  return `<div class="topbar"><div class="eyebrow">${eyebrow}</div>${right}</div>`;
+  return `${brandHeader(right)}${eyebrow ? `<div class="screen-kicker">${eyebrow}</div>` : ""}`;
 }
 
 function renderChooser(){
   const loopCards = [...CARDS, ...CARDS, ...CARDS];
   const n = CARDS.length;
   app.innerHTML = `
+    ${brandHeader()}
     <section class="chooser-stage">
-      <div class="chooser-copy">Choisis la carte que tu souhaites envoyer à ton crush.</div>
       <div class="carousel-shell">
         <div class="carousel" id="carousel" aria-label="Illustrations à choisir">
           ${loopCards.map((c,virtual)=>{
@@ -96,7 +153,7 @@ function renderChooser(){
             return `<button class="card-thumb ${logical===cardIndex && virtual>=n && virtual<2*n?'active':''}" data-index="${logical}" data-virtual="${virtual}" aria-label="Choisir ${escapeHtml(c.label)}"><img src="${c.src}" alt=""></button>`;
           }).join("")}
         </div>
-        <div class="hint">Touche la carte pour écrire</div>
+        <div class="hint">Touche le billet pour écrire.</div>
       </div>
     </section>
     <div class="footer"></div>`;
@@ -246,7 +303,6 @@ function renderChooser(){
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     centerVirtual(initialVirtual,"auto");
     setActiveFromVirtual(initialVirtual);
-    maybePlaySwipeDemo();
   }));
   window.onresize=()=>{
     if(!document.querySelector("#carousel")) return;
@@ -258,7 +314,7 @@ function renderEditor(){
   const card=currentCard();
   compositionStartedAt = null;
   app.innerHTML = `
-    ${shell("Écris ton billet", '<button class="text-button" id="back">← Changer de carte</button>')}
+    ${brandHeader('<button class="text-button" id="back">← Changer de carte</button>')}
     <section class="stage editor-stage">
       <div class="flip-wrap">
         <div class="flip-card" id="flipCard">
@@ -328,7 +384,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.19"
+      app_version:"sv-1.22"
     })});
     const raw=await res.text();
     let data;
@@ -350,7 +406,7 @@ function renderResult(slug){
   const url=`${location.origin}/${slug}`;
   const physicalUrl = CONFIG.physicalMailUrl || "https://coucouaurelien.com";
   app.innerHTML=`
-    ${shell("Ton billet est prêt")}
+    ${brandHeader()}
     <section class="stage"><div class="result">
       <h1>Il ne reste plus qu’à le faire voyager.</h1>
       <div class="result-actions">
@@ -364,7 +420,7 @@ function renderResult(slug){
     <div class="footer"><button class="text-button" id="another">Créer un autre billet</button></div>`;
   document.querySelector("#share").onclick=async()=>{
     if(navigator.share){
-      try{ await navigator.share({title:"Billet Doux",url}); }catch(e){}
+      try{ await navigator.share({title:"Les billets Éphémères",url}); }catch(e){}
     } else {
       await navigator.clipboard.writeText(url); showToast("Lien prêt à être collé dans ton message");
     }
@@ -386,7 +442,7 @@ async function renderRecipient(slug){
       data = payload;
     }catch(err){
       console.error("Billet read failed", err);
-      app.innerHTML=`<section class="recipient-stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div><a class="recipient-create visible" href="/">Moi aussi, écrire mon billet</a></section>`;
+      app.innerHTML=`${brandHeader()}<section class="recipient-stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div><a class="recipient-create visible" href="/"><span>Moi aussi,</span><span>écrire mon billet.</span></a></section><div class="footer"></div>`;
       return;
     }
   }
@@ -395,7 +451,7 @@ async function renderRecipient(slug){
     renderRecipientView(data, slug);
   }catch(err){
     console.error("Billet display failed", err, data);
-    app.innerHTML=`<section class="recipient-stage"><div class="error">Le billet existe, mais son affichage a rencontré un problème.</div><a class="recipient-create visible" href="/">Moi aussi, écrire mon billet</a></section>`;
+    app.innerHTML=`${brandHeader()}<section class="recipient-stage"><div class="error">Le billet existe, mais son affichage a rencontré un problème.</div><a class="recipient-create visible" href="/"><span>Moi aussi,</span><span>écrire mon billet.</span></a></section><div class="footer"></div>`;
   }
 }
 
