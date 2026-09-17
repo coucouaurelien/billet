@@ -9,6 +9,22 @@ let compositionStartedAt = null;
 const escapeHtml = (value="") => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const currentCard = () => CARDS[cardIndex];
 
+const fontReady = (() => {
+  try {
+    if (document.fonts?.load) {
+      return Promise.all([
+        document.fonts.load('32px "Coucouaurelien"'),
+        document.fonts.ready
+      ]).catch(() => undefined);
+    }
+  } catch (_) {}
+  return Promise.resolve();
+})();
+
+async function ensureCoucouFont(){
+  await fontReady;
+}
+
 function showToast(text){
   toast.textContent = text;
   toast.classList.add("show");
@@ -175,23 +191,19 @@ function renderChooser(){
   ["touchstart","wheel"].forEach(type=>carousel.addEventListener(type,cancelSwipeDemo,{passive:true,once:true}));
 
   function maybePlaySwipeDemo(){
-    if(n < 3 || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if(n < 2 || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     carousel.classList.add("demoing");
     const base = n + cardIndex;
-    const path = [base + 1, base + 2, base];
-    path.forEach((virtual, stepIndex)=>{
-      demoTimers.push(setTimeout(()=>{
-        if(demoCancelled) return;
-        setActiveFromVirtual(virtual);
-        centerVirtual(virtual, "smooth");
-      }, 650 + stepIndex * 900));
-    });
+    demoTimers.push(setTimeout(()=>{
+      if(demoCancelled) return;
+      setActiveFromVirtual(base + 1);
+      centerVirtual(base + 1, "smooth");
+    }, 1050));
     demoTimers.push(setTimeout(()=>{
       if(!demoCancelled){
         carousel.classList.remove("demoing");
-        normalizeLoop();
       }
-    }, 3550));
+    }, 3200));
   }
 
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
@@ -228,8 +240,11 @@ function renderEditor(){
   const msg=document.querySelector("#message");
   const sig=document.querySelector("#signature");
   const count=document.querySelector("#lineCount");
-  requestAnimationFrame(()=>requestAnimationFrame(()=>flipCard.classList.add("is-flipped")));
-  setTimeout(()=>msg.focus({preventScroll:true}),760);
+  (async()=>{
+    await ensureCoucouFont();
+    requestAnimationFrame(()=>requestAnimationFrame(()=>flipCard.classList.add("is-flipped")));
+    setTimeout(()=>msg.focus({preventScroll:true}),760);
+  })();
 
   function beginComposition(){ if(!compositionStartedAt) compositionStartedAt=Date.now(); }
   function visualLines(el){
@@ -275,7 +290,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.7"
+      app_version:"sv-1.8"
     })});
     const raw=await res.text();
     let data;

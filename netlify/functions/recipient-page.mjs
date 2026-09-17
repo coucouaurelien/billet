@@ -17,7 +17,7 @@ export default async (req) => {
   const letter = initialKey(signature || slug);
   const origin = url.origin;
   const canonical = `${origin}/${encodeURIComponent(slug)}`;
-  const image = `${origin}/assets/og/initial-${letter}.png?v=17-${encodeURIComponent(slug)}`;
+  const image = `${origin}/assets/og/initial-${letter}.jpg?v=18-${encodeURIComponent(slug)}`;
   const html = `<!doctype html>
 <html lang="fr">
 <head>
@@ -33,15 +33,17 @@ export default async (req) => {
   <meta property="og:url" content="${escapeAttr(canonical)}">
   <meta property="og:image" content="${escapeAttr(image)}">
   <meta property="og:image:secure_url" content="${escapeAttr(image)}">
+  <meta property="og:image:url" content="${escapeAttr(image)}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:type" content="image/jpeg">
   <meta property="og:image:alt" content="Billet Doux">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Billet Doux">
   <meta name="twitter:description" content="Billet Doux">
   <meta name="twitter:image" content="${escapeAttr(image)}">
   <link rel="canonical" href="${escapeAttr(canonical)}">
+  <link rel="preload" href="/assets/fonts/Coucouaurelien-V2-Regular.otf" as="font" type="font/otf" crossorigin>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
