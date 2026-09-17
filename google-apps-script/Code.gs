@@ -42,7 +42,7 @@ function setup() {
   removeColumnsByHeader_(billets, LEGACY_TRACKING_HEADERS);
 
   SpreadsheetApp.flush();
-  return 'OK — Billet Doux v1.14 relié à : ' + ss.getName();
+  return 'OK — Billet Doux v1.15 relié à : ' + ss.getName();
 }
 
 function getSpreadsheet_() {
@@ -70,7 +70,7 @@ function doGet(e) {
     const action = String(e.parameter.action || '');
 
     if (action === 'ping') {
-      return out_({ok:true, service:'billet-sheet', sheet_ready:true, version:'1.14'});
+      return out_({ok:true, service:'billet-sheet', sheet_ready:true, version:'1.15'});
     }
 
     if (action !== 'get') return out_({ok:false,error:'Bad action'});
@@ -173,43 +173,51 @@ function create_(body) {
       app_version: String(body.app_version || '').slice(0,40)
     };
 
-    // Une seule écriture de ligne, mappée par le NOM de colonne.
-    appendObject_(sheet, billet);
+    // Écriture principale. On mémorise immédiatement la ligne du slug pour
+    // qu'une ouverture juste après la création ne dépende d'aucun scan.
+    const billetRow = appendObject_(sheet, billet);
+    SpreadsheetApp.flush();
+    props.setProperty('SLUG_ROW__' + slug, String(billetRow));
 
+    // Le corpus est utile pour l'analyse artistique, mais il ne doit jamais
+    // rendre un billet introuvable si cette écriture secondaire rencontre un souci.
     if (reuse) {
-      appendObject_(corpus, {
-        corpus_id: Utilities.getUuid(),
-        created_at: nowIso,
-        card_id: cardId,
-        message,
-        char_count: stats.charCount,
-        word_count: stats.wordCount,
-        manual_line_count: stats.lineCount,
-        visual_line_count: visualLineCount,
-        newline_count: stats.newlineCount,
-        emoji_count: stats.emojiCount,
-        exclamation_count: stats.exclamationCount,
-        question_count: stats.questionCount,
-        ellipsis_count: stats.ellipsisCount,
-        composition_seconds: compositionSeconds,
-        consent_version: consentVersion
-      });
+      try {
+        appendObject_(corpus, {
+          corpus_id: Utilities.getUuid(),
+          created_at: nowIso,
+          card_id: cardId,
+          message,
+          char_count: stats.charCount,
+          word_count: stats.wordCount,
+          manual_line_count: stats.lineCount,
+          visual_line_count: visualLineCount,
+          newline_count: stats.newlineCount,
+          emoji_count: stats.emojiCount,
+          exclamation_count: stats.exclamationCount,
+          question_count: stats.questionCount,
+          ellipsis_count: stats.ellipsisCount,
+          composition_seconds: compositionSeconds,
+          consent_version: consentVersion
+        });
+      } catch (_) {}
     }
 
-    // Les billets sont immuables : pendant les premières heures, les ouvertures
-    // peuvent être servies directement depuis le cache Apps Script.
+    const payload = {
+      slug,
+      card_id: cardId,
+      signature,
+      message,
+      created_at: nowIso
+    };
+
+    // Cache très rapide pour les ouvertures récentes.
     try {
-      CacheService.getScriptCache().put('billet:' + slug, JSON.stringify({
-        slug,
-        card_id: cardId,
-        signature,
-        message,
-        created_at: nowIso
-      }), 21600);
+      CacheService.getScriptCache().put('billet:' + slug, JSON.stringify(payload), 21600);
     } catch (_) {}
 
     if (requestKey) props.setProperty(requestKey, slug);
-    return out_({ok:true,slug});
+    return out_({ok:true,...payload});
   } finally {
     lock.releaseLock();
   }
@@ -266,13 +274,40 @@ function findBySlug_(slug) {
 
   const sheet = ensureSheetColumns_(BILLETS_SHEET, BILLETS_HEADERS);
   const map = headerMap_(sheet);
+  const props = PropertiesService.getScriptProperties();
+  const rowKey = 'SLUG_ROW__' + slug;
+  const rememberedRow = Number(props.getProperty(rowKey) || 0);
+
+  // Chemin rapide : la création mémorise directement le numéro de ligne.
+  // On vérifie tout de même le slug, car un tri manuel peut déplacer les lignes.
+  if (rememberedRow >= 2 && rememberedRow <= sheet.getLastRow()) {
+    const remembered = sheet.getRange(rememberedRow, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const rememberedSlug = map.slug ? String(remembered[map.slug - 1] || '') : '';
+    if (rememberedSlug === slug) {
+      const obj = rowToObject_(remembered, map);
+      cacheBillet_(slug, obj);
+      return obj;
+    }
+  }
+
+  // Fallback pour les anciens billets ou après un tri manuel du tableau.
   const rowNum = findRowNumBySlug_(sheet, slug, map.slug);
   if (!rowNum) return null;
 
   const row = sheet.getRange(rowNum, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const obj = rowToObject_(row, map);
+  props.setProperty(rowKey, String(rowNum));
+  cacheBillet_(slug, obj);
+  return obj;
+}
+
+function rowToObject_(row, map) {
   const obj = {};
   Object.keys(map).forEach(key => obj[key] = row[map[key] - 1]);
+  return obj;
+}
 
+function cacheBillet_(slug, obj) {
   try {
     CacheService.getScriptCache().put('billet:' + slug, JSON.stringify({
       slug: obj.slug,
@@ -282,8 +317,6 @@ function findBySlug_(slug) {
       created_at: obj.created_at
     }), 21600);
   } catch (_) {}
-
-  return obj;
 }
 
 function stats_(message) {
@@ -335,7 +368,9 @@ function appendObject_(sheet, obj) {
     if (col) row[col - 1] = obj[key];
   });
 
-  sheet.getRange(sheet.getLastRow() + 1, 1, 1, width).setValues([row]);
+  const rowNum = sheet.getLastRow() + 1;
+  sheet.getRange(rowNum, 1, 1, width).setValues([row]);
+  return rowNum;
 }
 
 function removeColumnsByHeader_(sheet, headers) {
