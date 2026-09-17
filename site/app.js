@@ -328,7 +328,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.18"
+      app_version:"sv-1.19"
     })});
     const raw=await res.text();
     let data;
@@ -374,20 +374,28 @@ function renderResult(slug){
 
 async function renderRecipient(slug){
   app.innerHTML = loadingMarkup();
-  try{
-    let data;
-    if(window.SV_BILLET_PROMISE){
-      data = await window.SV_BILLET_PROMISE;
-      window.SV_BILLET_PROMISE = null;
-    } else {
-      const res = await fetch(`/api/billet?slug=${encodeURIComponent(slug)}`);
+  let data = window.SV_PRELOADED_BILLET || null;
+  window.SV_PRELOADED_BILLET = null;
+
+  // Fallback uniquement pour les anciens billets / cas exceptionnels.
+  if(!data){
+    try{
+      const res = await fetch(`/api/billet?slug=${encodeURIComponent(slug)}`, { cache:"no-store" });
       const payload = await res.json();
       if(!res.ok || !payload.ok) throw new Error("Billet introuvable");
       data = payload;
+    }catch(err){
+      console.error("Billet read failed", err);
+      app.innerHTML=`<section class="recipient-stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div><a class="recipient-create visible" href="/">Moi aussi, écrire mon billet</a></section>`;
+      return;
     }
+  }
+
+  try{
     renderRecipientView(data, slug);
   }catch(err){
-    app.innerHTML=`<section class="recipient-stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div><a class="recipient-create visible" href="/">Moi aussi, écrire mon billet</a></section>`;
+    console.error("Billet display failed", err, data);
+    app.innerHTML=`<section class="recipient-stage"><div class="error">Le billet existe, mais son affichage a rencontré un problème.</div><a class="recipient-create visible" href="/">Moi aussi, écrire mon billet</a></section>`;
   }
 }
 

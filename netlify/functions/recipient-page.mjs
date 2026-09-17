@@ -1,12 +1,36 @@
+import { getStore } from "@netlify/blobs";
+
+const STORE_NAME = "billet-doux";
+
 export default async (req) => {
   const url = new URL(req.url);
-  const slug = (url.searchParams.get("slug") || "").trim();
+  const slug = cleanSlug(url.searchParams.get("slug") || "");
   const origin = url.origin;
   const canonical = `${origin}/${encodeURIComponent(slug)}`;
   const letter = initialKey(slug);
   const image = `${origin}/assets/og/initial-${letter}.jpg?v=113`;
-  const apiUrl = `/api/billet?slug=${encodeURIComponent(slug)}`;
   const previewTitle = "J’ai un petit mot pour toi...";
+
+  // IMPORTANT : le billet est lu directement ici, dans le même store Netlify.
+  // Aucun aller-retour client -> /api/billet n'est nécessaire pour les billets récents.
+  let billet = null;
+  if (slug) {
+    try {
+      const store = getStore(STORE_NAME);
+      billet = await store.get(`billets/${slug}`, { type:"json", consistency:"strong" });
+      if (!billet?.slug || billet?.message === undefined) billet = null;
+    } catch (err) {
+      console.error("recipient-page Blob read failed", err);
+    }
+  }
+
+  const preloaded = billet ? `<script>window.SV_PRELOADED_BILLET=${safeJson({
+    ok:true,
+    slug:String(billet.slug || slug),
+    card_id:String(billet.card_id || ""),
+    signature:String(billet.signature || ""),
+    message:String(billet.message || "")
+  })};</script>` : "";
 
   const html = `<!doctype html>
 <html lang="fr">
@@ -35,23 +59,42 @@ export default async (req) => {
   <link rel="canonical" href="${escapeAttr(canonical)}">
   <link rel="preload" href="/assets/fonts/Coucouaurelien-V2-Regular.otf" as="font" type="font/otf" crossorigin>
   <link rel="stylesheet" href="/styles.css">
-  <script>window.SV_BILLET_PROMISE=fetch(${JSON.stringify(apiUrl)}).then(async r=>{const d=await r.json();if(!r.ok||!d.ok)throw new Error("Billet introuvable");return d;});</script>
+  ${preloaded}
 </head>
 <body>
   <main id="app" class="app" aria-live="polite"></main>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/cards.generated.js"></script>
   <script src="/config.js"></script>
-  <script src="/app.js" defer></script>
+  <script src="/app.js?v=119" defer></script>
 </body>
 </html>`;
-  return new Response(html,{status:200,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"public, max-age=60, s-maxage=86400, stale-while-revalidate=604800"}});
+
+  // La page contient potentiellement un message privé : aucun cache partagé/CDN.
+  return new Response(html,{status:200,headers:{
+    "Content-Type":"text/html; charset=utf-8",
+    "Cache-Control":"private, no-store, max-age=0",
+    "Pragma":"no-cache"
+  }});
 };
+
+function cleanSlug(value="") {
+  return String(value).toLowerCase().replace(/[^a-z0-9-]/g,"").slice(0,60);
+}
 
 function initialKey(value=""){
   const normalized = String(value).trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
   const match = normalized.match(/[A-Z]/);
   return match ? match[0] : "OTHER";
+}
+
+function safeJson(value){
+  return JSON.stringify(value)
+    .replace(/</g,"\\u003c")
+    .replace(/>/g,"\\u003e")
+    .replace(/&/g,"\\u0026")
+    .replace(/\u2028/g,"\\u2028")
+    .replace(/\u2029/g,"\\u2029");
 }
 
 function escapeAttr(v=""){
