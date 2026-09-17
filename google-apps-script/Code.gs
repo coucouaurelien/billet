@@ -42,7 +42,7 @@ function setup() {
   removeColumnsByHeader_(billets, LEGACY_TRACKING_HEADERS);
 
   SpreadsheetApp.flush();
-  return 'OK — Billet Doux v1.11 relié à : ' + ss.getName();
+  return 'OK — Billet Doux v1.14 relié à : ' + ss.getName();
 }
 
 function getSpreadsheet_() {
@@ -70,7 +70,7 @@ function doGet(e) {
     const action = String(e.parameter.action || '');
 
     if (action === 'ping') {
-      return out_({ok:true, service:'billet-sheet', sheet_ready:true, version:'1.11'});
+      return out_({ok:true, service:'billet-sheet', sheet_ready:true, version:'1.14'});
     }
 
     if (action !== 'get') return out_({ok:false,error:'Bad action'});
@@ -118,14 +118,24 @@ function create_(body) {
   if (!signature) throw new Error('Signature required');
   if (!cardId) throw new Error('Card required');
 
+  const requestId = String(body.request_id || '').trim().slice(0,100);
+  const props = PropertiesService.getScriptProperties();
+  const requestKey = requestId ? 'CREATE_REQ__' + requestId : '';
+  if (requestKey) {
+    const previousSlug = props.getProperty(requestKey);
+    if (previousSlug) return out_({ok:true, slug:previousSlug, replay:true});
+  }
+
   // Très court verrou uniquement pour garantir un slug unique en cas de deux
   // créations simultanées. On ne bloque plus jusqu'à 10 secondes.
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(2500)) throw new Error('Busy — retry');
 
   try {
-    const sheet = ensureSheetColumns_(BILLETS_SHEET, BILLETS_HEADERS);
-    const corpus = ensureSheetColumns_(CORPUS_SHEET, CORPUS_HEADERS);
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName(BILLETS_SHEET);
+    const corpus = ss.getSheetByName(CORPUS_SHEET);
+    if (!sheet || !corpus) throw new Error('Sheet non configuré. Relance setup().');
 
     const slugBase = slugify_(signature) || 'billet';
     const next = nextSlug_(sheet, slugBase);
@@ -198,6 +208,7 @@ function create_(body) {
       }), 21600);
     } catch (_) {}
 
+    if (requestKey) props.setProperty(requestKey, slug);
     return out_({ok:true,slug});
   } finally {
     lock.releaseLock();
@@ -207,22 +218,19 @@ function create_(body) {
 function nextSlug_(sheet, slugBase) {
   const props = PropertiesService.getScriptProperties();
   const key = 'SLUG_NEXT__' + slugBase;
-  let n = Number(props.getProperty(key) || 0);
+  const saved = Number(props.getProperty(key) || 0);
+  let n;
 
-  // Première utilisation de ce prénom : on synchronise une fois avec les billets
-  // existants. Ensuite on ne rescannera plus toute la colonne à chaque création.
-  if (!Number.isFinite(n) || n < 1) {
+  // Si le compteur existe, aucune lecture du Sheet n'est nécessaire.
+  if (Number.isFinite(saved) && saved >= 1) {
+    n = saved;
+  } else {
+    // Compatibilité avec les billets déjà créés avant les compteurs :
+    // une seule synchronisation pour ce prénom, puis plus aucun scan.
     n = inferNextSlugNumber_(sheet, slugBase);
   }
 
-  let slug = n === 1 ? slugBase : slugBase + '-' + n;
-
-  // Garde-fou si le compteur a été effacé / désynchronisé.
-  while (findRowNumBySlug_(sheet, slug, headerMap_(sheet).slug)) {
-    n += 1;
-    slug = slugBase + '-' + n;
-  }
-
+  const slug = n === 1 ? slugBase : slugBase + '-' + n;
   props.setProperty(key, String(n + 1));
   return {slug, number:n};
 }

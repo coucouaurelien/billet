@@ -6,17 +6,13 @@ export default async (req) => {
   if (!endpoint) return json(500, { ok:false, error:"GOOGLE_SCRIPT_URL manque dans Netlify" });
   if (!secret) return json(500, { ok:false, error:"BILLET_API_SECRET manque dans Netlify" });
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 7000);
-
   try {
     const body = await req.json();
     const r = await fetch(endpoint, {
       method:"POST",
       headers:{"Content-Type":"text/plain;charset=utf-8"},
       body:JSON.stringify({ ...body, action:"create", secret }),
-      redirect:"follow",
-      signal:controller.signal
+      redirect:"follow"
     });
 
     const raw = await r.text();
@@ -27,7 +23,7 @@ export default async (req) => {
       console.error("Apps Script returned non JSON", r.status, raw.slice(0,500));
       return json(502, {
         ok:false,
-        error:"Google a mis trop de temps à enregistrer le billet. Réessaie une fois."
+        error:"Google n’a pas renvoyé une réponse exploitable. Réessaie dans quelques secondes."
       });
     }
 
@@ -39,12 +35,7 @@ export default async (req) => {
     return json(200, data);
   } catch (e) {
     console.error("create-billet exception:", e);
-    if (e?.name === "AbortError") {
-      return json(504, { ok:false, error:"Google met trop de temps à répondre. Réessaie une fois." });
-    }
     return json(500, { ok:false, error:"Erreur serveur lors de la création du billet" });
-  } finally {
-    clearTimeout(timeout);
   }
 };
 

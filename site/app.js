@@ -5,6 +5,7 @@ const toast = document.querySelector("#toast");
 let cardIndex = 0;
 let editorState = { message: "", signature: "" };
 let compositionStartedAt = null;
+let creationRequestId = null;
 
 const escapeHtml = (value="") => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const currentCard = () => CARDS[cardIndex];
@@ -319,6 +320,7 @@ async function createBillet(message, signature, visualLineCount){
   const compositionSeconds = compositionStartedAt ? Math.min(3600, Math.max(0, Math.round((Date.now()-compositionStartedAt)/1000))) : 0;
   try{
     const res=await fetch("/api/create",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      request_id: creationRequestId || (creationRequestId = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)),
       card_id:currentCard().id,
       message,
       signature,
@@ -326,7 +328,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.12"
+      app_version:"sv-1.14"
     })});
     const raw=await res.text();
     let data;
@@ -335,6 +337,7 @@ async function createBillet(message, signature, visualLineCount){
       throw new Error("Le serveur a mis trop de temps. Réessaie une fois.");
     }
     if(!res.ok || !data.ok) throw new Error(data.error||"Création impossible");
+    creationRequestId = null;
     renderResult(data.slug);
   }catch(err){
     console.error("createBillet failed:",err);
@@ -366,7 +369,7 @@ function renderResult(slug){
       await navigator.clipboard.writeText(url); showToast("Lien prêt à être collé dans ton message");
     }
   };
-  document.querySelector("#another").onclick=()=>{ editorState={message:"",signature:""}; history.pushState({},"","/"); route(); };
+  document.querySelector("#another").onclick=()=>{ editorState={message:"",signature:""}; creationRequestId=null; history.pushState({},"","/"); route(); };
 }
 
 async function renderRecipient(slug){
