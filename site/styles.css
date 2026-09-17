@@ -150,3 +150,10 @@ a{color:inherit}
 .loading-copy{color:#8d8073;font-family:Georgia,"Times New Roman",serif;font-size:13px;font-style:italic;letter-spacing:.02em}
 @keyframes artSweep{0%{background-position:60% 46%;transform:scale(1.02)}100%{background-position:42% 48%;transform:scale(1.06)}}
 @keyframes artShimmer{0%{transform:translateX(-44%)}100%{transform:translateX(44%)}}
+
+
+/* Chargement sobre v1.12 — aucun dessin, aucune animation */
+.loading-stage{justify-content:center}
+.loading-shell{min-height:38svh;display:flex;align-items:center;justify-content:center}
+.loading-copy{color:#8d8073;font-family:Georgia,"Times New Roman",serif;font-size:13px;font-style:italic;letter-spacing:.02em}
+.loading-art,.loading-mail-wrap,.loading-mail,.loading-shadow,.loading-veil{display:none!important;animation:none!important}

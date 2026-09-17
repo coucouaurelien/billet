@@ -11,12 +11,10 @@ const currentCard = () => CARDS[cardIndex];
 
 const cardById = (id) => CARDS.find(card => card.id === id) || CARDS[0];
 
-function loadingMarkup(cardSrc=""){
-  const style = cardSrc ? ` style="--loading-image:url('${cardSrc}')"` : "";
+function loadingMarkup(){
   return `
     <section class="recipient-stage loading-stage">
       <div class="loading-shell" aria-live="polite">
-        <div class="loading-art"${style}><div class="loading-veil"></div></div>
         <div class="loading-copy">Ouverture du billet…</div>
       </div>
     </section>`;
@@ -328,7 +326,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.11"
+      app_version:"sv-1.12"
     })});
     const raw=await res.text();
     let data;
@@ -372,19 +370,17 @@ function renderResult(slug){
 }
 
 async function renderRecipient(slug){
-  const preloaded = window.SV_PRELOADED_BILLET && window.SV_PRELOADED_BILLET.slug === slug
-    ? window.SV_PRELOADED_BILLET
-    : null;
-  app.innerHTML = loadingMarkup(cardById(preloaded?.card_id)?.src || "");
+  app.innerHTML = loadingMarkup();
   try{
-    let data = preloaded;
-    if(!data){
+    let data;
+    if(window.SV_BILLET_PROMISE){
+      data = await window.SV_BILLET_PROMISE;
+      window.SV_BILLET_PROMISE = null;
+    } else {
       const res = await fetch(`/api/billet?slug=${encodeURIComponent(slug)}`);
       const payload = await res.json();
       if(!res.ok || !payload.ok) throw new Error("Billet introuvable");
       data = payload;
-    } else {
-      await new Promise(resolve => setTimeout(resolve, 140));
     }
     renderRecipientView(data, slug);
   }catch(err){
