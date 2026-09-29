@@ -12,6 +12,7 @@ export default async (req, context) => {
     const signature = String(body.signature || "").trim().slice(0,30);
     const cardId = String(body.card_id || "").trim().slice(0,80);
     const requestId = String(body.request_id || "").trim().slice(0,100);
+    const reservedSlug = String(body.reserved_slug || "").replace(/\D/g,"").slice(0,6);
 
     if (!message) return json(400, { ok:false, error:"Le message est vide" });
     if (!signature) return json(400, { ok:false, error:"La signature est vide" });
@@ -42,7 +43,9 @@ export default async (req, context) => {
 
     // Netlify attribue le slug et persiste le billet AVANT toute opération Google.
     // La fonction reserveBillet vérifie explicitement la relecture avant de rendre le lien.
-    const billet = await reserveBillet(store, core);
+    const billet = reservedSlug
+      ? await finalizeReservedBillet(store, core, reservedSlug)
+      : await reserveBillet(store, core);
 
     if (requestId) {
       try {
@@ -64,7 +67,7 @@ export default async (req, context) => {
         reuse_consent_version: String(body.reuse_consent_version || "").slice(0,60),
         composition_seconds: clampInt(body.composition_seconds, 0, 3600),
         visual_line_count: clampInt(body.visual_line_count, 1, 4),
-        app_version: String(body.app_version || "sv-1.25").slice(0,40),
+        app_version: String(body.app_version || "sv-1.26").slice(0,40),
         created_at: nowIso
       };
       try {
@@ -82,6 +85,30 @@ export default async (req, context) => {
     return json(500, { ok:false, error:"Impossible de créer le billet pour le moment" });
   }
 };
+
+async function finalizeReservedBillet(store, core, slug){
+  if(!/^\d{6}$/.test(slug)) throw new Error("Invalid reserved slug");
+  const requestId=String(core.request_id || "");
+  const reservation=await store.get(`reservations/${slug}`,{type:"json",consistency:"strong"});
+  if(!reservation || reservation.request_id !== requestId) throw new Error("Reservation not found");
+
+  const key=`billets/${slug}`;
+  const existing=await store.get(key,{type:"json",consistency:"strong"});
+  if(existing?.slug){
+    if(requestId && existing.request_id===requestId) return existing;
+    throw new Error("Reserved slug already used");
+  }
+
+  const billet={...core,slug,slug_number:1};
+  const write=await store.setJSON(key,billet);
+  if(!write?.etag) throw new Error("Billet write failed");
+  const verified=await store.get(key,{type:"json",consistency:"strong"});
+  if(!verified?.slug || verified.request_id!==requestId) throw new Error("Billet verification failed");
+
+  await store.delete(`reservations/${slug}`).catch(()=>{});
+  await store.delete(`reservation-requests/${requestId}`).catch(()=>{});
+  return verified;
+}
 
 async function reserveBillet(store, core) {
   const requestId = String(core.request_id || "");

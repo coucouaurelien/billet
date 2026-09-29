@@ -5,7 +5,7 @@ const STORE_NAME = "billet-doux";
 export default async (req) => {
   const url = new URL(req.url);
   const slug = cleanSlug(url.searchParams.get("slug") || "");
-  const origin = url.origin;
+  const origin = "https://billet-ephemere.coucouaurelien.com";
   const canonical = `${origin}/${encodeURIComponent(slug)}`;
   const previewTitle = "J’ai un petit mot pour toi...";
 
@@ -25,7 +25,7 @@ export default async (req) => {
   // Le lien public est désormais numérique, donc l'initiale de l'aperçu
   // vient de la signature stockée dans le billet (anciens liens inclus).
   const letter = initialKey(billet?.signature || slug);
-  const image = `${origin}/assets/og/initial-${letter}.jpg?v=125`;
+  const image = `${origin}/assets/og/initial-${letter}.jpg?v=126`;
 
   const preloaded = billet?.consumed === true
     ? `<script>window.SV_BILLET_GONE=${safeJson({slug,card_id:String(billet.card_id || "")})};</script>`
@@ -73,7 +73,7 @@ export default async (req) => {
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/cards.generated.js"></script>
   <script src="/config.js"></script>
-  <script src="/app.js?v=125" defer></script>
+  <script src="/app.js?v=126" defer></script>
 </body>
 </html>`;
 

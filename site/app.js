@@ -6,6 +6,9 @@ let cardIndex = 0;
 let editorState = { message: "", signature: "" };
 let compositionStartedAt = null;
 let creationRequestId = null;
+let reservedSlug = null;
+let reservationPromise = null;
+const PUBLIC_ORIGIN = "https://billet-ephemere.coucouaurelien.com";
 
 const escapeHtml = (value="") => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const currentCard = () => CARDS[cardIndex];
@@ -28,7 +31,7 @@ function renderRecipientFinal(cardId=""){
   app.innerHTML = `
     ${brandHeader()}
     <section class="recipient-experience is-final">
-      <a class="recipient-create recipient-create-final visible" href="/?card=${encodeURIComponent(card?.id || "")}" aria-hidden="false">
+      <a class="recipient-create recipient-create-final visible" href="${PUBLIC_ORIGIN}/?card=${encodeURIComponent(card?.id || "")}" aria-hidden="false">
         <span>Moi aussi,</span>
         <span>écrire mon billet.</span>
       </a>
@@ -79,7 +82,7 @@ function renderRecipientView(data, slug){
 
       <div class="recipient-instruction" id="recipientInstruction">Clic pour retourner le billet.</div>
 
-      <a class="recipient-create recipient-create-final" id="recipientCreate" href="/?card=${encodeURIComponent(card.id)}" aria-hidden="true">
+      <a class="recipient-create recipient-create-final" id="recipientCreate" href="${PUBLIC_ORIGIN}/?card=${encodeURIComponent(card.id)}" aria-hidden="true">
         <span>Moi aussi,</span>
         <span>écrire mon billet.</span>
       </a>
@@ -376,6 +379,23 @@ function renderChooser(){
   };
 }
 
+async function ensureReservedSlug(){
+  if(reservedSlug) return reservedSlug;
+  if(reservationPromise) return reservationPromise;
+  creationRequestId = creationRequestId || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  reservationPromise = fetch("/api/reserve",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({request_id:creationRequestId})
+  }).then(async res=>{
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok || !data.ok || !data.slug) throw new Error(data.error || "Impossible de préparer le billet");
+    reservedSlug = String(data.slug);
+    return reservedSlug;
+  }).finally(()=>{ reservationPromise=null; });
+  return reservationPromise;
+}
+
 function renderEditor(){
   const card=currentCard();
   compositionStartedAt = null;
@@ -393,12 +413,32 @@ function renderEditor(){
         </div>
       </div>
     </section>
-    <div class="footer"><button class="gold-button" id="send">Envoyer</button></div>`;
+    <div class="footer"><button class="gold-button" id="send" disabled>Envoyer</button></div>`;
 
   const flipCard=document.querySelector("#flipCard");
   const msg=document.querySelector("#message");
   const sig=document.querySelector("#signature");
   const count=document.querySelector("#lineCount");
+  const sendButton=document.querySelector("#send");
+
+  // Le code public est réservé pendant que la personne écrit. Ainsi, au clic
+  // sur Envoyer, navigator.share peut être appelé immédiatement dans le geste utilisateur.
+  (async()=>{
+    for(let attempt=0; attempt<4 && !reservedSlug; attempt++){
+      try{
+        await ensureReservedSlug();
+      }catch(err){
+        console.warn("reservation failed",err);
+        await new Promise(r=>setTimeout(r,450*(attempt+1)));
+      }
+    }
+    if(reservedSlug){
+      sendButton.disabled=false;
+    }else{
+      sendButton.disabled=false;
+      showToast("Impossible de préparer le billet. Réessaie.");
+    }
+  })();
   (async()=>{
     await ensureCoucouFont();
     requestAnimationFrame(()=>requestAnimationFrame(()=>flipCard.classList.add("is-flipped")));
@@ -430,19 +470,37 @@ function renderEditor(){
   updateCount();
 
   document.querySelector("#back").onclick=()=>{ editorState.message=msg.value; editorState.signature=sig.value; renderChooser(); };
-  document.querySelector("#send").onclick=()=>createBillet(msg.value,sig.value,visualLines(msg));
+  document.querySelector("#send").onclick=()=>shareAndCreateBillet(msg.value,sig.value,visualLines(msg));
 }
 
-async function createBillet(message, signature, visualLineCount){
+async function shareAndCreateBillet(message, signature, visualLineCount){
   message=message.trim(); signature=signature.trim();
   if(!message){ showToast("Écris quelques mots d’abord"); return; }
   if(!signature){ showToast("Ajoute ta signature"); return; }
+
   const button=document.querySelector("#send");
-  button.disabled=true; button.textContent="Création…";
-  const compositionSeconds = compositionStartedAt ? Math.min(3600, Math.max(0, Math.round((Date.now()-compositionStartedAt)/1000))) : 0;
+  button.disabled=true;
+
+  let slug;
   try{
-    const res=await fetch("/api/create",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-      request_id: creationRequestId || (creationRequestId = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)),
+    slug = reservedSlug || await ensureReservedSlug();
+  }catch(err){
+    showToast(err?.message || "Impossible de préparer le billet");
+    button.disabled=false;
+    return;
+  }
+
+  const url=`${PUBLIC_ORIGIN}/${slug}`;
+  const compositionSeconds = compositionStartedAt ? Math.min(3600, Math.max(0, Math.round((Date.now()-compositionStartedAt)/1000))) : 0;
+
+  // L’écriture finale démarre immédiatement, mais on n’attend PAS sa réponse
+  // avant d’ouvrir la feuille de partage : cela conserve le geste utilisateur.
+  const creationPromise = fetch("/api/create",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      request_id:creationRequestId,
+      reserved_slug:slug,
       card_id:currentCard().id,
       message,
       signature,
@@ -450,31 +508,21 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.25"
-    })});
+      app_version:"sv-1.26"
+    })
+  }).then(async res=>{
     const raw=await res.text();
     let data;
-    try{ data=JSON.parse(raw); }catch(_){
-      console.error("create endpoint returned non JSON", raw.slice(0,300));
-      throw new Error("Le serveur a mis trop de temps. Réessaie une fois.");
-    }
+    try{ data=JSON.parse(raw); }catch(_){ throw new Error("Création impossible"); }
     if(!res.ok || !data.ok) throw new Error(data.error||"Création impossible");
-    creationRequestId = null;
-    await shareCreatedBillet(data.slug);
-  }catch(err){
-    console.error("createBillet failed:",err);
-    showToast(err?.message || "Impossible de créer le billet");
-    button.disabled=false; button.textContent="Envoyer";
-  }
-}
+    return data;
+  });
 
-async function shareCreatedBillet(slug){
-  const url=`${location.origin}/${slug}`;
-  let shared=false;
+  let shareAttempted=false;
   if(navigator.share){
     try{
+      shareAttempted=true;
       await navigator.share({title:"J’ai un petit mot pour toi...",url});
-      shared=true;
     }catch(err){
       if(err?.name !== "AbortError") console.warn("share failed",err);
     }
@@ -486,26 +534,25 @@ async function shareCreatedBillet(slug){
       window.prompt("Copie ce lien pour l’envoyer :",url);
     }
   }
-  renderShareDone(slug, shared);
-}
 
-function renderShareDone(slug, shared=false){
-  const url=`${location.origin}/${slug}`;
-  app.innerHTML=`
-    ${brandHeader()}
-    <section class="stage"><div class="result result-direct-share">
-      <h1>${shared ? "Ton billet est parti." : "Ton billet est prêt."}</h1>
-      <button class="text-button direct-reshare" id="reshare">Envoyer le billet</button>
-    </div></section>
-    <div class="footer"><button class="text-button" id="another">Créer un autre billet</button></div>`;
-  document.querySelector("#reshare").onclick=async()=>{
-    if(navigator.share){
-      try{ await navigator.share({title:"J’ai un petit mot pour toi...",url}); }catch(_){}
-    } else {
-      try{ await navigator.clipboard.writeText(url); showToast("Lien copié, prêt à être envoyé"); }catch(_){ window.prompt("Copie ce lien pour l’envoyer :",url); }
+  try{
+    await creationPromise;
+    creationRequestId=null;
+    reservedSlug=null;
+    reservationPromise=null;
+    editorState={message:"",signature:""};
+    button.disabled=true;
+    button.textContent="Envoyer";
+    ensureReservedSlug().then(()=>{ button.disabled=false; }).catch(()=>{ button.disabled=false; });
+    if(shareAttempted){
+      showToast("Billet créé");
     }
-  };
-  document.querySelector("#another").onclick=()=>{ editorState={message:"",signature:""}; creationRequestId=null; history.pushState({},"","/"); route(); };
+  }catch(err){
+    console.error("createBillet failed:",err);
+    showToast("Le billet n’a pas pu être enregistré. Réessaie.");
+    button.disabled=false;
+    button.textContent="Envoyer";
+  }
 }
 
 async function renderRecipient(slug){
@@ -541,7 +588,7 @@ async function renderRecipient(slug){
       data = payload;
     }catch(err){
       console.error("Billet read failed", err);
-      app.innerHTML=`${brandHeader()}<section class="recipient-stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div><a class="recipient-create visible" href="/"><span>Moi aussi,</span><span>écrire mon billet.</span></a></section><div class="footer"></div>`;
+      app.innerHTML=`${brandHeader()}<section class="recipient-stage"><div class="error">Ce billet est introuvable ou n’est plus disponible.</div><a class="recipient-create visible" href="${PUBLIC_ORIGIN}/"><span>Moi aussi,</span><span>écrire mon billet.</span></a></section><div class="footer"></div>`;
       return;
     }
   }
@@ -550,7 +597,7 @@ async function renderRecipient(slug){
     renderRecipientView(data, slug);
   }catch(err){
     console.error("Billet display failed", err, data);
-    app.innerHTML=`${brandHeader()}<section class="recipient-stage"><div class="error">Le billet existe, mais son affichage a rencontré un problème.</div><a class="recipient-create visible" href="/"><span>Moi aussi,</span><span>écrire mon billet.</span></a></section><div class="footer"></div>`;
+    app.innerHTML=`${brandHeader()}<section class="recipient-stage"><div class="error">Le billet existe, mais son affichage a rencontré un problème.</div><a class="recipient-create visible" href="${PUBLIC_ORIGIN}/"><span>Moi aussi,</span><span>écrire mon billet.</span></a></section><div class="footer"></div>`;
   }
 }
 

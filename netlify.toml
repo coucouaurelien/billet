@@ -4,6 +4,24 @@
   functions = "netlify/functions"
 
 [[redirects]]
+  from = "https://billet-doux.coucouaurelien.com/*"
+  to = "https://billet-ephemere.coucouaurelien.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://www.billet-ephemere.coucouaurelien.com/*"
+  to = "https://billet-ephemere.coucouaurelien.com/:splat"
+  status = 301
+  force = true
+
+
+[[redirects]]
+  from = "/api/reserve"
+  to = "/.netlify/functions/reserve-billet"
+  status = 200
+
+[[redirects]]
   from = "/api/create"
   to = "/.netlify/functions/create-billet"
   status = 200
