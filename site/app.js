@@ -184,18 +184,22 @@ function renderChooser(){
     ${brandHeader()}
     <section class="chooser-stage">
       <div class="carousel-shell">
+        <button class="carousel-arrow carousel-arrow-left" id="carouselPrev" type="button" aria-label="Billet précédent">‹</button>
         <div class="carousel" id="carousel" aria-label="Illustrations à choisir">
           ${loopCards.map((c,virtual)=>{
             const logical = virtual % n;
             return `<button class="card-thumb ${logical===cardIndex && virtual>=n && virtual<2*n?'active':''}" data-index="${logical}" data-virtual="${virtual}" aria-label="Choisir ${escapeHtml(c.label)}"><img src="${c.src}" alt=""></button>`;
           }).join("")}
         </div>
+        <button class="carousel-arrow carousel-arrow-right" id="carouselNext" type="button" aria-label="Billet suivant">›</button>
         <div class="hint">Touche le billet pour écrire.</div>
       </div>
     </section>
     <div class="footer"></div>`;
 
   const carousel = document.querySelector("#carousel");
+  const prevArrow = document.querySelector("#carouselPrev");
+  const nextArrow = document.querySelector("#carouselNext");
   const cards = [...document.querySelectorAll(".card-thumb")];
   let scrollTimer = null;
   let pointerDown = false;
@@ -244,6 +248,18 @@ function renderChooser(){
       });
     }
   }
+
+  function stepCarousel(direction){
+    cancelSwipeDemo();
+    const current = nearestVirtual();
+    const target = current + direction;
+    if(!cards[target]) return;
+    setActiveFromVirtual(target);
+    centerVirtual(target,"smooth");
+    setTimeout(normalizeLoop,260);
+  }
+  prevArrow?.addEventListener("click",e=>{ e.preventDefault(); e.stopPropagation(); stepCarousel(-1); });
+  nextArrow?.addEventListener("click",e=>{ e.preventDefault(); e.stopPropagation(); stepCarousel(1); });
 
   carousel.addEventListener("scroll",()=>{
     if(relooping) return;
@@ -434,7 +450,7 @@ async function createBillet(message, signature, visualLineCount){
       reuse_consent_version:"artist-use-notice-upstream-2026-09",
       composition_seconds:compositionSeconds,
       visual_line_count:Math.max(1, Math.min(4, Number(visualLineCount)||1)),
-      app_version:"sv-1.23"
+      app_version:"sv-1.25"
     })});
     const raw=await res.text();
     let data;
@@ -444,7 +460,7 @@ async function createBillet(message, signature, visualLineCount){
     }
     if(!res.ok || !data.ok) throw new Error(data.error||"Création impossible");
     creationRequestId = null;
-    renderResult(data.slug);
+    await shareCreatedBillet(data.slug);
   }catch(err){
     console.error("createBillet failed:",err);
     showToast(err?.message || "Impossible de créer le billet");
@@ -452,27 +468,41 @@ async function createBillet(message, signature, visualLineCount){
   }
 }
 
-function renderResult(slug){
+async function shareCreatedBillet(slug){
   const url=`${location.origin}/${slug}`;
-  const physicalUrl = CONFIG.physicalMailUrl || "https://coucouaurelien.com";
+  let shared=false;
+  if(navigator.share){
+    try{
+      await navigator.share({title:"J’ai un petit mot pour toi...",url});
+      shared=true;
+    }catch(err){
+      if(err?.name !== "AbortError") console.warn("share failed",err);
+    }
+  } else {
+    try{
+      await navigator.clipboard.writeText(url);
+      showToast("Lien copié, prêt à être envoyé");
+    }catch(_){
+      window.prompt("Copie ce lien pour l’envoyer :",url);
+    }
+  }
+  renderShareDone(slug, shared);
+}
+
+function renderShareDone(slug, shared=false){
+  const url=`${location.origin}/${slug}`;
   app.innerHTML=`
     ${brandHeader()}
-    <section class="stage"><div class="result">
-      <h1>Il ne reste plus qu’à le faire voyager.</h1>
-      <div class="result-actions">
-        <button class="gold-button result-button" id="share">Envoyer par message</button>
-        <div class="physical-wrap">
-          <a class="gold-button result-button result-link-button" id="physical" href="${escapeHtml(physicalUrl)}" target="_blank" rel="noopener">Envoyer dans un véritable courrier</a>
-          <div class="physical-sub">Écrit à la main, au dos d’une risographie, et posté directement à ton crush</div>
-        </div>
-      </div>
+    <section class="stage"><div class="result result-direct-share">
+      <h1>${shared ? "Ton billet est parti." : "Ton billet est prêt."}</h1>
+      <button class="text-button direct-reshare" id="reshare">Envoyer le billet</button>
     </div></section>
     <div class="footer"><button class="text-button" id="another">Créer un autre billet</button></div>`;
-  document.querySelector("#share").onclick=async()=>{
+  document.querySelector("#reshare").onclick=async()=>{
     if(navigator.share){
-      try{ await navigator.share({title:"Les billets Éphémères",url}); }catch(e){}
+      try{ await navigator.share({title:"J’ai un petit mot pour toi...",url}); }catch(_){}
     } else {
-      await navigator.clipboard.writeText(url); showToast("Lien prêt à être collé dans ton message");
+      try{ await navigator.clipboard.writeText(url); showToast("Lien copié, prêt à être envoyé"); }catch(_){ window.prompt("Copie ce lien pour l’envoyer :",url); }
     }
   };
   document.querySelector("#another").onclick=()=>{ editorState={message:"",signature:""}; creationRequestId=null; history.pushState({},"","/"); route(); };

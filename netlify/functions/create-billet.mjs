@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { getStore } from "@netlify/blobs";
 
 const STORE_NAME = "billet-doux";
@@ -30,7 +31,6 @@ export default async (req, context) => {
     }
 
     const nowIso = new Date().toISOString();
-    const base = slugify(signature) || "billet";
     const core = {
       ok:true,
       card_id:cardId,
@@ -42,7 +42,7 @@ export default async (req, context) => {
 
     // Netlify attribue le slug et persiste le billet AVANT toute opération Google.
     // La fonction reserveBillet vérifie explicitement la relecture avant de rendre le lien.
-    const billet = await reserveBillet(store, base, core);
+    const billet = await reserveBillet(store, core);
 
     if (requestId) {
       try {
@@ -64,7 +64,7 @@ export default async (req, context) => {
         reuse_consent_version: String(body.reuse_consent_version || "").slice(0,60),
         composition_seconds: clampInt(body.composition_seconds, 0, 3600),
         visual_line_count: clampInt(body.visual_line_count, 1, 4),
-        app_version: String(body.app_version || "sv-1.23").slice(0,40),
+        app_version: String(body.app_version || "sv-1.25").slice(0,40),
         created_at: nowIso
       };
       try {
@@ -83,29 +83,26 @@ export default async (req, context) => {
   }
 };
 
-async function reserveBillet(store, base, core) {
+async function reserveBillet(store, core) {
   const requestId = String(core.request_id || "");
 
-  for (let n = 1; n <= 9999; n++) {
-    const slug = n === 1 ? base : `${base}-${n}`;
+  // Nouveau format public : 6 chiffres aléatoires, sans rapport avec la signature.
+  // On vérifie la disponibilité dans Blobs puis on relit exactement la valeur écrite
+  // avant de rendre le lien à l'utilisateur.
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const slug = String(randomInt(0, 1000000)).padStart(6, "0");
     const key = `billets/${slug}`;
 
-    // Pas d'écriture conditionnelle : le SDK Netlify a actuellement un bug connu
-    // pouvant annoncer un succès alors que l'écriture n'a pas réellement atterri.
     const existing = await store.get(key, { type:"json", consistency:"strong" });
     if (existing) {
       if (requestId && existing.request_id === requestId) return existing;
       continue;
     }
 
-    const billet = { ...core, slug, slug_number:n };
+    const billet = { ...core, slug, slug_number:1 };
     const write = await store.setJSON(key, billet);
-    if (!write?.etag) {
-      throw new Error("Blob write did not return an ETag");
-    }
+    if (!write?.etag) continue;
 
-    // Vérification explicite : on ne rend JAMAIS le lien tant qu'on n'a pas
-    // relu exactement le billet qui vient d'être écrit.
     const verified = await store.get(key, { type:"json", consistency:"strong" });
     if (
       verified?.slug === slug &&
@@ -117,7 +114,7 @@ async function reserveBillet(store, base, core) {
       return verified;
     }
   }
-  throw new Error("Slug allocation exhausted");
+  throw new Error("Random code allocation exhausted");
 }
 
 async function triggerArchive(url, payload) {
@@ -135,11 +132,6 @@ async function triggerArchive(url, payload) {
   }
 }
 
-function slugify(value="") {
-  return String(value)
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0,50);
-}
 
 function clampInt(value, min, max) {
   const n = Math.round(Number(value) || 0);

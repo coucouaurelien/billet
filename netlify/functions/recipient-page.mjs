@@ -7,8 +7,6 @@ export default async (req) => {
   const slug = cleanSlug(url.searchParams.get("slug") || "");
   const origin = url.origin;
   const canonical = `${origin}/${encodeURIComponent(slug)}`;
-  const letter = initialKey(slug);
-  const image = `${origin}/assets/og/initial-${letter}.jpg?v=113`;
   const previewTitle = "J’ai un petit mot pour toi...";
 
   // IMPORTANT : le billet est lu directement ici, dans le même store Netlify.
@@ -23,6 +21,11 @@ export default async (req) => {
       console.error("recipient-page Blob read failed", err);
     }
   }
+
+  // Le lien public est désormais numérique, donc l'initiale de l'aperçu
+  // vient de la signature stockée dans le billet (anciens liens inclus).
+  const letter = initialKey(billet?.signature || slug);
+  const image = `${origin}/assets/og/initial-${letter}.jpg?v=125`;
 
   const preloaded = billet?.consumed === true
     ? `<script>window.SV_BILLET_GONE=${safeJson({slug,card_id:String(billet.card_id || "")})};</script>`
@@ -70,7 +73,7 @@ export default async (req) => {
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/cards.generated.js"></script>
   <script src="/config.js"></script>
-  <script src="/app.js?v=123" defer></script>
+  <script src="/app.js?v=125" defer></script>
 </body>
 </html>`;
 
